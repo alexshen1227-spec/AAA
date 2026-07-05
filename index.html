@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Wilds of Aerwyn</title>
+<style>
+  @font-face {
+    font-family: 'Cinzel';
+    src: url('./lib/fonts/cinzel-latin.woff2') format('woff2');
+    font-weight: 400 700;
+    font-display: swap;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e18; }
+  #game { display: block; width: 100%; height: 100%;
+          filter: saturate(1.07) contrast(1.02); }
+  .hud { position: absolute; pointer-events: none; user-select: none;
+         font-family: Georgia, 'Times New Roman', serif; }
+  .cinzel { font-family: 'Cinzel', Georgia, serif; }
+
+  /* stylized key-chip used in prompts / pause reference */
+  .key { display: inline-block; min-width: 21px; text-align: center;
+         background: linear-gradient(180deg, #f2e2b2, #cdab60); color: #241b0e;
+         border: 1px solid rgba(58,44,20,.85); border-radius: 5px;
+         padding: 0 7px; font-weight: 700; font-size: 12px; letter-spacing: 1px;
+         font-family: 'Cinzel', Georgia, serif; line-height: 19px;
+         box-shadow: 0 1px 0 rgba(0,0,0,.55), inset 0 1px 2px rgba(255,255,255,.45);
+         text-shadow: none; vertical-align: 1px; }
+
+  #hearts { top: 16px; left: 18px; position: absolute; pointer-events: none;
+            transform-origin: left center;
+            filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
+  #hearts.low { animation: heartlow 1.05s ease-in-out infinite; }
+  @keyframes heartlow {
+    0%, 100% { transform: scale(1); filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
+    50% { transform: scale(1.055); filter: drop-shadow(0 0 9px rgba(232,56,74,.85)); }
+  }
+  #hearts.pop { animation: heartpop .55s ease-out; }
+  @keyframes heartpop {
+    0% { transform: scale(1.16); filter: drop-shadow(0 0 15px rgba(255,232,150,.95)); }
+    100% { transform: scale(1); filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); }
+  }
+
+  #stamina { position: absolute; left: 58%; top: 42%; width: 110px; height: 110px;
+             opacity: 0; pointer-events: none; filter: drop-shadow(0 1px 4px rgba(0,0,0,.5)); }
+
+  #counters { top: 14px; right: 200px; position: absolute; display: flex; gap: 10px;
+              pointer-events: none; font-family: Georgia, serif; }
+  #counters span { display: flex; align-items: center; gap: 5px;
+              background: rgba(14,16,22,.55); border: 1px solid rgba(226,203,141,.28);
+              border-radius: 14px; padding: 3px 11px; color: #f0e6c8; font-size: 14px;
+              text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+
+  #clock { position: absolute; right: 24px; bottom: 212px; color: #f0e6c8; font-size: 13px;
+           letter-spacing: 1.5px; text-shadow: 0 1px 3px rgba(0,0,0,.9); pointer-events: none;
+           font-family: 'Cinzel', Georgia, serif; display: flex; gap: 8px;
+           align-items: center; justify-content: flex-end; }
+  #wx { letter-spacing: 0; }
+  #moon { color: #ff4a58; letter-spacing: 0;
+          text-shadow: 0 0 9px rgba(255,60,80,.85), 0 1px 3px rgba(0,0,0,.9); }
+
+  #minimap { position: absolute; right: 16px; bottom: 34px; width: 170px; height: 170px;
+             filter: drop-shadow(0 3px 8px rgba(0,0,0,.55)); pointer-events: none; }
+  #objective { position: absolute; right: 16px; bottom: 9px; width: 170px; text-align: center;
+               color: #ffe9b0; font-size: 12.5px; letter-spacing: 1px; pointer-events: none;
+               font-family: 'Cinzel', Georgia, serif; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+
+  /* slim top-center compass strip */
+  #compass { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+             width: 360px; height: 34px; pointer-events: none; opacity: .92;
+             filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); }
+
+  #prompt { left: 50%; bottom: 12%; transform: translateX(-50%);
+            background: linear-gradient(180deg, rgba(16,18,26,.82), rgba(10,12,18,.82));
+            color: #f5e8c4; padding: 9px 22px;
+            border-radius: 4px; border: 1px solid rgba(226,203,141,.5);
+            box-shadow: 0 0 0 3px rgba(10,12,18,.35), 0 4px 14px rgba(0,0,0,.4);
+            font-size: 15px; letter-spacing: 1px; opacity: 0; transition: opacity .18s;
+            position: absolute; font-family: 'Cinzel', Georgia, serif; white-space: nowrap; }
+  #prompt.show { opacity: 1; }
+  #prompt .key { margin-right: 8px; }
+  #prompt .pr-sep { margin: 0 10px; color: rgba(226,203,141,.55); }
+
+  /* stacking toast queue (newest on top, up to 2) */
+  #toasts { left: 50%; top: 17%; transform: translateX(-50%); position: absolute;
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            width: max-content; max-width: 84vw; pointer-events: none; }
+  .toast { background: rgba(12,14,20,.66); padding: 8px 24px; border-radius: 4px;
+           border: 1px solid rgba(226,203,141,.35);
+           font-size: 17px; letter-spacing: .8px; text-shadow: 0 2px 6px rgba(0,0,0,.9);
+           opacity: 0; transform: translateY(-6px); transition: opacity .3s, transform .3s;
+           text-align: center; font-family: Georgia, serif; }
+  .toast.show { opacity: 1; transform: none; }
+
+  #banner { left: 0; right: 0; top: 24%; text-align: center; opacity: 0;
+            transition: opacity .8s; position: absolute; }
+  #banner.show { opacity: 1; }
+  #banner-title { font-size: 42px; color: #f5edd2; letter-spacing: 12px;
+                  font-family: 'Cinzel', Georgia, serif; font-weight: 700;
+                  text-shadow: 0 2px 14px rgba(0,0,0,.85), 0 0 40px rgba(255,220,150,.25); }
+  #banner-rule { width: 340px; height: 1px; margin: 10px auto;
+                 background: linear-gradient(90deg, transparent, #e2cb8d, transparent); }
+  #banner-sub { font-size: 15px; color: #cfe3d8; letter-spacing: 3px;
+                text-shadow: 0 1px 6px rgba(0,0,0,.9); font-style: italic; }
+
+  /* painterly frame: always-on soft vignette + hurt flash */
+  #vignette-static { inset: 0; position: absolute; pointer-events: none;
+              background: radial-gradient(ellipse at center, transparent 58%, rgba(10,14,24,.34) 100%); }
+  #vignette { inset: 0; position: absolute; pointer-events: none; opacity: 0;
+              background: radial-gradient(ellipse at center, transparent 42%, rgba(200,20,30,.55) 100%); }
+  #vignette.flash { animation: vflash .7s ease-out; }
+  @keyframes vflash { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+  #title { inset: 0; position: absolute; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; text-align: center;
+           background: linear-gradient(180deg, rgba(6,10,20,.2) 0%, rgba(6,10,20,.6) 100%);
+           transition: opacity 1.2s; }
+  #title.hide { opacity: 0; pointer-events: none; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(16px); }
+                      to { opacity: 1; transform: none; } }
+  #title-emblem { width: 92px; height: 92px; margin-bottom: 10px;
+                  filter: drop-shadow(0 0 18px rgba(120,220,255,.45));
+                  animation: riseIn 1.7s .1s ease-out both; }
+  #title h1 { font-size: 60px; color: #f5edd2; letter-spacing: 16px; font-weight: 700;
+              font-family: 'Cinzel', Georgia, serif; line-height: 1.25;
+              text-shadow: 0 4px 24px rgba(0,0,0,.9), 0 0 60px rgba(120,220,255,.3);
+              animation: riseIn 1.5s .35s ease-out both; }
+  #title h2 { font-size: 15px; color: #9fd8c8; letter-spacing: 8px; margin-top: 10px;
+              font-weight: 400; font-family: 'Cinzel', Georgia, serif;
+              text-shadow: 0 2px 8px rgba(0,0,0,.9);
+              animation: riseIn 1.4s .6s ease-out both; }
+  #title-rule { width: 420px; height: 1px; margin: 22px auto 0;
+                background: linear-gradient(90deg, transparent, #e2cb8d, transparent);
+                animation: riseIn 1.4s .75s ease-out both; }
+  #press { margin-top: 34px; font-size: 18px; color: #ffe9b0; letter-spacing: 4px;
+           animation: pulse 1.8s infinite; text-shadow: 0 2px 8px rgba(0,0,0,.9);
+           font-family: 'Cinzel', Georgia, serif; }
+  #continue-hint, #controls-hint { margin-top: 14px; font-size: 12.5px; color: #b8c8d8;
+           letter-spacing: 1px; text-shadow: 0 1px 4px rgba(0,0,0,.9); line-height: 1.8; }
+  #continue-hint { display: none; color: #e2cb8d; }
+  @keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+
+  #gameover { inset: 0; position: absolute; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; background: rgba(10,4,6,0);
+              opacity: 0; pointer-events: none; transition: opacity 1.4s, background 1.4s; }
+  #gameover.show { opacity: 1; background: rgba(8,3,5,.78); }
+  #gameover h1 { font-size: 50px; color: #d84858; letter-spacing: 16px; font-weight: 700;
+                 font-family: 'Cinzel', Georgia, serif;
+                 text-shadow: 0 0 40px rgba(216,72,88,.4); }
+  #gameover p { color: #d8c8b8; margin-top: 20px; font-size: 15px; letter-spacing: 3px;
+                font-family: 'Cinzel', Georgia, serif; }
+  #gameover-beacons { color: #e2cb8d; font-size: 15px;
+                      text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+
+  /* region name reveal — lower left, calligraphic */
+  #region { position: absolute; left: 46px; bottom: 17%; opacity: 0;
+            font-family: 'Cinzel', Georgia, serif; font-size: 30px; font-weight: 400;
+            color: #f2ead2; letter-spacing: 7px;
+            text-shadow: 0 2px 10px rgba(0,0,0,.85), 0 0 30px rgba(255,235,180,.18);
+            transition: opacity 1s; pointer-events: none; }
+  #region::after { content: ''; display: block; height: 1px; margin-top: 8px;
+            background: linear-gradient(90deg, #e2cb8d, transparent); }
+  #region.show { opacity: 1; }
+
+  /* npc dialogue box */
+  #dialog { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%);
+            width: min(680px, 82vw); padding: 18px 30px 15px;
+            background: linear-gradient(180deg, rgba(13,15,22,.92), rgba(9,11,17,.92));
+            border: 1px solid rgba(226,203,141,.55); border-radius: 5px;
+            box-shadow: 0 0 0 3px rgba(9,11,17,.4), 0 10px 30px rgba(0,0,0,.5);
+            opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #dialog.show { opacity: 1; }
+  #dialog-name { font-family: 'Cinzel', Georgia, serif; color: #e2cb8d; font-size: 13px;
+            letter-spacing: 4px; margin-bottom: 7px; }
+  #dialog-text { font-family: Georgia, serif; color: #eef0e6; font-size: 16.5px;
+            line-height: 1.65; }
+  #dialog-more { text-align: right; color: #9fb8a8; font-size: 12px; margin-top: 8px;
+            letter-spacing: 2px; font-family: 'Cinzel', Georgia, serif;
+            animation: pulse 1.6s infinite; }
+
+  #paused-hint { position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
+                 color: #ffe9b0; font-size: 12.5px; letter-spacing: 1.5px; display: none;
+                 background: rgba(12,16,24,.66); padding: 5px 16px; border-radius: 3px;
+                 border: 1px solid rgba(226,203,141,.3); font-family: 'Cinzel', Georgia, serif; }
+
+  /* ---- pause panel -------------------------------------------------------- */
+  #pause { inset: 0; position: absolute; display: flex; align-items: center;
+           justify-content: center; background: rgba(5,8,14,.72); opacity: 0;
+           pointer-events: none; transition: opacity .22s; }
+  #pause.show { opacity: 1; }
+  .pv-inner { text-align: center; min-width: 470px; max-width: 620px; padding: 32px 54px 26px;
+              background: linear-gradient(180deg, rgba(13,15,22,.94), rgba(9,11,17,.96));
+              border: 1px solid rgba(226,203,141,.5); border-radius: 6px;
+              box-shadow: 0 0 0 4px rgba(9,11,17,.45), 0 18px 60px rgba(0,0,0,.6); }
+  #pause h1 { font-family: 'Cinzel', Georgia, serif; font-size: 32px; font-weight: 700;
+              color: #f5edd2; letter-spacing: 14px; text-indent: 14px;
+              text-shadow: 0 2px 12px rgba(0,0,0,.8), 0 0 30px rgba(255,220,150,.2); }
+  .pv-rule { height: 1px; margin: 16px auto; width: 330px;
+             background: linear-gradient(90deg, transparent, #e2cb8d, transparent); }
+  #pause-stats { display: grid; grid-template-columns: auto auto; gap: 5px 28px;
+                 justify-content: center; font-size: 14px; }
+  #pause-stats .ps-l { color: #9fb8a8; letter-spacing: 1.5px; text-align: right;
+                       font-family: 'Cinzel', Georgia, serif; font-size: 12.5px; line-height: 1.7; }
+  #pause-stats .ps-v { color: #f0e6c8; text-align: left; font-family: Georgia, serif;
+                       text-shadow: 0 1px 2px rgba(0,0,0,.8); line-height: 1.6; }
+  #pause-controls { font-size: 12px; color: #b8c8d8; line-height: 2.25; letter-spacing: .4px; }
+  #pause-controls .key { margin: 0 3px 0 10px; }
+  #pause-controls .key:first-child { margin-left: 0; }
+  .pv-hint { margin-top: 15px; font-style: italic; font-size: 13px; color: #9fd8c8;
+             letter-spacing: .5px; }
+  .pv-resume { margin-top: 13px; font-size: 12.5px; color: #ffe9b0; letter-spacing: 2px;
+               font-family: 'Cinzel', Georgia, serif; animation: pulse 1.8s infinite; }
+
+  /* ---- full map overlay ---------------------------------------------------- */
+  #mapview { inset: 0; position: absolute; display: flex; flex-direction: column;
+             align-items: center; justify-content: center; gap: 13px;
+             background: rgba(4,7,12,.9); opacity: 0; pointer-events: none;
+             transition: opacity .22s; }
+  #mapview.show { opacity: 1; }
+  #mapview-head { display: flex; gap: 26px; align-items: baseline; color: #f0e6c8;
+                  font-family: 'Cinzel', Georgia, serif; letter-spacing: 6px; font-size: 20px;
+                  text-shadow: 0 2px 10px rgba(0,0,0,.8); }
+  #map-glim { font-size: 14px; color: #9fffb0; letter-spacing: 1px;
+              font-family: Georgia, serif; }
+  #bigmap { width: min(76vmin, 680px); height: min(76vmin, 680px);
+            border: 1px solid rgba(226,203,141,.55); border-radius: 4px;
+            box-shadow: 0 0 0 4px rgba(9,11,17,.5), 0 18px 50px rgba(0,0,0,.65); }
+  #mapview-foot { color: #b8c8d8; font-size: 12.5px; letter-spacing: 2px;
+                  font-family: 'Cinzel', Georgia, serif; }
+  #mapview-foot .mv-tower { color: #ffb03d; }
+  #mapview-foot .mv-beacon { color: #54e8ff; }
+
+  /* HUD hidden until the adventure starts */
+  #hearts, #stamina, #counters, #clock, #minimap, #compass, #objective { visibility: hidden; }
+  body.ingame #hearts, body.ingame #stamina, body.ingame #counters,
+  body.ingame #clock, body.ingame #minimap, body.ingame #compass,
+  body.ingame #objective { visibility: visible; }
+</style>
+<script type="importmap">
+  { "imports": { "three": "./lib/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="vignette-static"></div>
+<canvas id="hearts" class="hud" width="260" height="40"></canvas>
+<canvas id="stamina" class="hud" width="110" height="110"></canvas>
+<canvas id="compass" class="hud" width="360" height="34"></canvas>
+<div id="counters" class="hud">
+  <span>🍎 <b id="c-apples">0</b></span>
+  <span>💠 <b id="c-gems">0</b></span>
+  <span>🔮 <b id="c-orbs">0</b></span>
+  <span>🍃 <b id="c-glim">0</b></span>
+</div>
+<div id="clock" class="hud"><span id="wx">☀</span><span id="clock-time">7:00 AM</span><span id="moon"></span></div>
+<canvas id="minimap" class="hud" width="170" height="170"></canvas>
+<div id="objective" class="hud"></div>
+<div id="prompt" class="hud"></div>
+<div id="toasts" class="hud"></div>
+<div id="banner" class="hud">
+  <div id="banner-title"></div>
+  <div id="banner-rule"></div>
+  <div id="banner-sub"></div>
+</div>
+<div id="vignette"></div>
+<div id="region" class="hud"></div>
+<div id="dialog" class="hud">
+  <div id="dialog-name"></div>
+  <div id="dialog-text"></div>
+  <div id="dialog-more">E &mdash; CONTINUE</div>
+</div>
+<div id="paused-hint" class="hud">Click to look around — cursor released</div>
+
+<!-- pause panel: shown with G.paused via P (or pointer-lock loss) -->
+<div id="pause" class="hud">
+  <div class="pv-inner">
+    <h1>PAUSED</h1>
+    <div class="pv-rule"></div>
+    <div id="pause-stats">
+      <span class="ps-l">BEACONS AWAKENED</span><span class="ps-v" id="ps-beacons">0 / 8</span>
+      <span class="ps-l">TOWERS CHARTED</span><span class="ps-v" id="ps-towers">0 / 3</span>
+      <span class="ps-l">GLIMMERS FOUND</span><span class="ps-v" id="ps-glim">0</span>
+      <span class="ps-l">SPIRIT ORBS</span><span class="ps-v" id="ps-orbs">0</span>
+      <span class="ps-l">GEMS</span><span class="ps-v" id="ps-gems">0</span>
+      <span class="ps-l">HEARTS</span><span class="ps-v" id="ps-hearts">3</span>
+      <span class="ps-l">STAMINA VESSEL</span><span class="ps-v" id="ps-stam">100</span>
+    </div>
+    <div class="pv-rule"></div>
+    <div id="pause-controls">
+      <div><span class="key">WASD</span> Move <span class="key">SHIFT</span> Sprint
+           <span class="key">SPACE</span> Jump / hold to glide <span class="key">W/S</span> Dive &amp; flare</div>
+      <div><span class="key">J</span> / Click — Attack <span class="key">TAB</span> Lock-on
+           <span class="key">E</span> Interact <span class="key">H</span> Eat apple</div>
+      <div><span class="key">F</span> Grab / place <span class="key">R</span> Tap turn, hold spin
+           <span class="key">J</span> Throw held prop</div>
+      <div><span class="key">M</span> Map <span class="key">N</span> Mute <span class="key">P</span> Pause</div>
+    </div>
+    <div class="pv-hint" id="pause-hint-line"></div>
+    <div class="pv-resume">P — RETURN TO THE WILDS</div>
+  </div>
+</div>
+
+<!-- full-screen charted map (M) -->
+<div id="mapview" class="hud">
+  <div id="mapview-head"><span>AERWYN &mdash; CHARTED LANDS</span><span id="map-glim"></span></div>
+  <canvas id="bigmap" width="768" height="768"></canvas>
+  <div id="mapview-foot"><span class="mv-tower">&#9650;</span> tower &middot;
+    <span class="mv-beacon">&#9679;</span> beacon &middot; M &mdash; close</div>
+</div>
+
+<div id="title" class="hud">
+  <svg id="title-emblem" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <!-- original sigil: the Wind-Orb of Aerwyn — an orb held by two wings over three peaks -->
+    <g fill="none" stroke="#e2cb8d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="50" cy="38" r="11" fill="rgba(120,220,255,.22)" stroke="#9fe6ff"/>
+      <circle cx="50" cy="38" r="4.5" fill="#9fe6ff" stroke="none" opacity=".9"/>
+      <path d="M36 40 C 22 36, 14 26, 12 14 C 24 18, 33 24, 38 31"/>
+      <path d="M64 40 C 78 36, 86 26, 88 14 C 76 18, 67 24, 62 31"/>
+      <path d="M20 84 L 34 60 L 43 74 L 50 56 L 57 74 L 66 60 L 80 84 Z" fill="rgba(226,203,141,.12)"/>
+      <path d="M50 49 L 50 56" stroke="#9fe6ff"/>
+    </g>
+  </svg>
+  <h1>THE WILDS<br>of AERWYN</h1>
+  <h2>AN OPEN-AIR ADVENTURE</h2>
+  <div id="title-rule"></div>
+  <div id="press">— Press ENTER or click to begin —</div>
+  <div id="continue-hint">Save found: ENTER starts anew &middot; SHIFT+ENTER continues</div>
+  <div id="controls-hint">
+    WASD move &middot; Mouse look &middot; SHIFT sprint &middot; SPACE jump / hold to glide &middot;
+    W/S dive &amp; flare while gliding &middot; walk into cliffs to climb<br>
+    Click or J attack &middot; TAB lock-on &middot; E interact &middot; F grab / place &middot;
+    R tap turn / hold spin &middot; attack throws what you carry<br>
+    H eat apple &middot; M map &middot; N mute &middot; P pause
+  </div>
+</div>
+
+<div id="gameover" class="hud">
+  <h1>YOU FELL</h1>
+  <p id="gameover-beacons"></p>
+  <p>Press ENTER to return to the last beacon</p>
+</div>
+
+<div id="filewarn">
+  <div id="filewarn-box">
+    <h1>ONE MORE STEP, WANDERER</h1>
+    <p>Browsers refuse to load a game's modules straight from a double-clicked file,<br>
+       so this page can't start from here. Pick either path:</p>
+    <p class="fw-opt">&#9656; Double-click <b>Play.bat</b> in the game folder &mdash; it starts the game properly</p>
+    <p class="fw-opt">&#9656; Or double-click <b>WildsOfAerwyn.html</b> &mdash; the all-in-one file that runs anywhere</p>
+  </div>
+</div>
+<style>
+  #filewarn { display: none; position: absolute; inset: 0; z-index: 50;
+              background: rgba(6,9,16,.94); align-items: center; justify-content: center; }
+  #filewarn-box { text-align: center; max-width: 620px; padding: 40px;
+                  border: 1px solid rgba(226,203,141,.5); background: rgba(14,16,24,.7); }
+  #filewarn-box h1 { font-family: 'Cinzel', Georgia, serif; color: #e2cb8d; font-size: 26px;
+                     letter-spacing: 6px; margin-bottom: 18px; }
+  #filewarn-box p { color: #cdd6e0; font-family: Georgia, serif; font-size: 15px;
+                    line-height: 1.7; margin-bottom: 12px; }
+  #filewarn-box .fw-opt { color: #f0e6c8; }
+  #filewarn-box b { color: #9fe6ff; }
+</style>
+<script>
+  // classic script: runs even where module scripts are blocked (file://)
+  if (location.protocol === 'file:') {
+    document.addEventListener('DOMContentLoaded', function () {
+      document.getElementById('filewarn').style.display = 'flex';
+      var t = document.getElementById('title');
+      if (t) t.style.display = 'none';
+    });
+  }
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
