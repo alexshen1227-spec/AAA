@@ -27,6 +27,18 @@ let rainbow = null, rainbowW = 0, prevWet = 0;
 let auroraMat = null; const auroras = [];
 let auroraW = 0;
 let moonGlade = null;
+// deed-stars: the Wayfarer constellation — one warm star per deed in
+// remember.js DEEDS (index order matters). Camera-relative like sun/moon.
+let deedGroup = null;
+const deedStars = [];   // {sprite, fade}
+let deedLines = null, deedLineCol = null, deedLineMax = 0;
+const DEED_POINTS = [   // (u,v) star chart of the striding Wayfarer
+  [0, 0.42], [0, 0.95], [0.85, 1.15], [0.36, 0.58], [-0.34, 0.6],
+  [-0.88, 0.72], [-0.18, -0.06], [0.2, -0.02], [0.5, -0.5], [0.74, -0.95],
+  [-0.42, -0.55], [-0.68, -1.0], [0.62, 0.12], [-0.62, 0.32],
+];
+const DEED_EDGES = [[1, 0], [0, 4], [0, 3], [0, 6], [0, 7], [3, 12], [12, 2],
+  [4, 13], [13, 5], [6, 10], [10, 11], [7, 8], [8, 9]];
 const _svec = new THREE.Vector3();
 const _X_AXIS = new THREE.Vector3(1, 0, 0);
 const RED_TOP = new THREE.Color(0x260812);
@@ -335,6 +347,41 @@ export function buildSky() {
   moonGlade.position.set(-170, 0.07, 120);
   moonGlade.visible = false;
   G.scene.add(moonGlade);
+
+  // deed-stars: authored directions high in the southern sky, hidden until
+  // their deed kindles them (G.deedStars written by remember.js)
+  deedGroup = new THREE.Group();
+  const dirFor = (u, v) => {
+    const az = Math.PI + u * 0.42, el = 0.55 + v * 0.3;
+    return new THREE.Vector3(
+      Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+  };
+  for (let i = 0; i < DEED_POINTS.length; i++) {
+    const s = makeGlow(0xffd9a0, 14 + hash2(i, 401) * 8);
+    s.material.fog = false;
+    s.material.opacity = 0;
+    s.position.copy(dirFor(...DEED_POINTS[i])).multiplyScalar(780);
+    deedGroup.add(s);
+    deedStars.push({ sprite: s, fade: 0 });
+  }
+  {
+    const pos = new Float32Array(DEED_EDGES.length * 6);
+    deedLineCol = new Float32Array(DEED_EDGES.length * 6);
+    DEED_EDGES.forEach(([a, b], i) => {
+      dirFor(...DEED_POINTS[a]).multiplyScalar(776).toArray(pos, i * 6);
+      dirFor(...DEED_POINTS[b]).multiplyScalar(776).toArray(pos, i * 6 + 3);
+    });
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    lg.setAttribute('color', new THREE.BufferAttribute(deedLineCol, 3));
+    deedLines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    }));
+    deedLines.frustumCulled = false;
+    deedGroup.add(deedLines);
+  }
+  G.scene.add(deedGroup);
 
   // lights: pale-teal sky bounce over warm moss ground
   hemi = new THREE.HemisphereLight(0xa8d8e8, 0x7a8a58, 0.85);
@@ -735,6 +782,37 @@ export function updateSky(dt) {
   if (moonGlow) {
     moonGlow.material.opacity = 0.24 * night * (1 - grim * 0.85) *
       (0.9 + Math.sin(G.time * 0.7) * 0.1);
+  }
+  // deed-stars: kindled deeds fade in over ~3s and twinkle with the sky
+  if (deedGroup) {
+    deedGroup.position.copy(pc);
+    const starVis = night * (1 - wCur.cloud * 0.85) * (G.bloodNight ? 0.5 : 1);
+    deedGroup.visible = starVis > 0.02;
+    if (deedGroup.visible) {
+      let fading = false;
+      for (let i = 0; i < deedStars.length; i++) {
+        const s = deedStars[i];
+        if (G.deedStars && G.deedStars[i] && s.fade < 1) {
+          s.fade = Math.min(1, s.fade + dt / 3);
+          fading = true;
+        }
+        s.sprite.material.opacity = starVis * s.fade *
+          (0.7 + 0.2 * Math.sin(G.time * 1.3 + i * 2.3));
+      }
+      // constellation lines emerge between pairs of kindled stars; the color
+      // buffer only changes during a ~3s kindle fade, so upload only then
+      if (fading) {
+        deedLineMax = 0;
+        for (let i = 0; i < DEED_EDGES.length; i++) {
+          const k = Math.min(deedStars[DEED_EDGES[i][0]].fade, deedStars[DEED_EDGES[i][1]].fade);
+          if (k > deedLineMax) deedLineMax = k;
+          for (let j = 0; j < 6; j++) deedLineCol[i * 6 + j] = k;
+        }
+        deedLines.geometry.attributes.color.needsUpdate = true;
+      }
+      deedLines.material.opacity = 0.14 * starVis;
+      deedLines.visible = deedLineMax > 0;
+    }
   }
   // shooting stars on deep clear nights
   if (night > 0.85 && grim < 0.3 && G.time > shootNextAt) {

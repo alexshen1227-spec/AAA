@@ -6,6 +6,7 @@ import { renderMapImage, renderMapImageAsync, inRiver } from './terrain.js';
 import { propInstance } from './assets.js';
 import { spawnHealBloom } from './world.js';
 import { clamp } from './noise.js';
+import { CHRONICLE, DEEDS } from './remember.js';
 
 const WX_GLYPH = { clear: '☀', breeze: '🍃', overcast: '☁', rain: '☔', storm: '⚡' };
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
@@ -730,7 +731,7 @@ export class UI {
     this.invGems.textContent = '💠 ' + G.gems;
     // tabs
     this.invTabs.innerHTML = '';
-    for (const tab of ['materials', 'gear', 'log']) {
+    for (const tab of ['materials', 'gear', 'log', 'chronicle', 'deeds']) {
       const b = document.createElement('div');
       const on = this.invTab === tab;
       b.textContent = tab.toUpperCase();
@@ -761,6 +762,50 @@ export class UI {
       this.invDetail.innerHTML =
         '<div style="margin-top:120px;color:#9a8f74;font-family:Georgia;font-size:13px;line-height:1.6">' +
         'The valley remembers what you do for it.<br>Wake the beacons. Chart the towers.<br>Mind the sleeping constructs.</div>';
+      return;
+    }
+    // the Chronicle: every fragment of the valley's memory found so far
+    if (this.invTab === 'chronicle') {
+      const found = CHRONICLE.filter(c => G.lore[c.id]).length;
+      let html = '<div style="grid-column:1/-1;height:363px;overflow-y:auto">' +
+        `<div style="font-family:Georgia;font-size:12px;color:#9a8f74;padding:2px 4px 10px">` +
+        `The valley’s memory, recovered piece by piece — ${found} of ${CHRONICLE.length} pages</div>`;
+      for (const c of CHRONICLE) {
+        if (G.lore[c.id]) {
+          html += `<div style="padding:8px 4px;border-bottom:1px solid rgba(226,203,141,.15)">` +
+            `<div style="font-size:13px;letter-spacing:1px;color:#ffe066;font-family:Georgia">${c.title}</div>` +
+            `<div style="font-size:13px;color:#cfc4a6;font-family:Georgia;line-height:1.5;margin-top:3px">${c.text}</div></div>`;
+        } else {
+          html += `<div style="padding:8px 4px;border-bottom:1px solid rgba(226,203,141,.08);` +
+            `font-family:Georgia;font-size:13px;color:#5f5843;font-style:italic">— an unwritten page —</div>`;
+        }
+      }
+      this.invGrid.innerHTML = html + '</div>';
+      this.invDetail.innerHTML =
+        '<div style="margin-top:120px;color:#9a8f74;font-family:Georgia;font-size:13px;line-height:1.6">' +
+        'Hollow stones hum where the old things stand.<br>Echoes walk at the vaults by night.<br>' +
+        'And something is tumbling in the updrafts.</div>';
+      return;
+    }
+    // deed-stars: the Wayfarer constellation, verse by verse
+    if (this.invTab === 'deeds') {
+      const lit = DEEDS.filter(d => G.deeds[d.id]).length;
+      let html = '<div style="grid-column:1/-1;height:363px;overflow-y:auto">' +
+        `<div style="font-family:Georgia;font-size:12px;color:#9a8f74;padding:2px 4px 10px">` +
+        `Deeds kindle stars in the night sky — ${lit} of ${DEEDS.length} burn in the Wayfarer</div>`;
+      for (const d of DEEDS) {
+        const on = !!G.deeds[d.id];
+        html += `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 4px;` +
+          `border-bottom:1px solid rgba(226,203,141,.12)">` +
+          `<span style="font-size:15px;color:${on ? '#ffd9a0' : '#4a4436'}">${on ? '★' : '✧'}</span>` +
+          `<span style="font-family:Georgia;font-size:14px;letter-spacing:1px;color:${on ? '#ffe066' : '#6a6250'}">` +
+          `${on ? '“' + d.verse + '”' : '· · ·'}</span>` +
+          `<span style="font-family:Georgia;font-size:12px;color:${on ? '#cfc4a6' : '#7a7158'};margin-left:auto;text-align:right">${d.hint}</span></div>`;
+      }
+      this.invGrid.innerHTML = html + '</div>';
+      this.invDetail.innerHTML =
+        '<div style="margin-top:120px;color:#9a8f74;font-family:Georgia;font-size:13px;line-height:1.6">' +
+        'On clear nights, look north and high.<br>Your legend is being drawn up there,<br>one star at a time.</div>';
       return;
     }
     // slot grid: fixed 5x4, discovery-gated items first, the rest empty

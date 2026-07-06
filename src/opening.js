@@ -14,7 +14,7 @@ let barTop = null, barBot = null, skipEl = null;
 const camFrom = new THREE.Vector3();
 const camTo = new THREE.Vector3();
 
-function bars(show) {
+export function bars(show, showSkip = show) {
   if (!barTop) {
     const mk = (pos) => {
       const d = document.createElement('div');
@@ -32,7 +32,7 @@ function bars(show) {
     document.body.appendChild(skipEl);
   }
   barTop.style.height = barBot.style.height = show ? '9vh' : '0';
-  skipEl.style.display = show ? 'block' : 'none';
+  skipEl.style.display = showSkip ? 'block' : 'none';
   // lift the dialog box clear of the bottom letterbox bar while cinematic
   const dlg = document.getElementById('dialog');
   if (dlg) dlg.style.bottom = show ? '14vh' : '';

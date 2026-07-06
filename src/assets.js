@@ -40,6 +40,10 @@ Object.assign(MODELS, {
   ouroboros_ring: 'assets/models/blender/ouroboros_ring.glb',
   tree_autumn: 'assets/models/blender/tree_autumn.glb',
   waterfall: 'assets/models/blender/waterfall.glb',
+  // The Remembering: whisper stones, Piet's cairn, the Pale Hart
+  whisper_stone: 'assets/models/blender/whisper_stone.glb',
+  cairn: 'assets/models/blender/cairn.glb',
+  pale_hart: 'assets/models/blender/pale_hart.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',

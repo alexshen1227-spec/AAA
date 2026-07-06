@@ -16,6 +16,7 @@ import { buildEnemies, updateEnemies, respawnFallen } from './enemies.js';
 import { buildAnimals, updateAnimals } from './animals.js';
 import { initTutorial, updateTutorial } from './tutorial.js';
 import { initOpening, updateOpening } from './opening.js';
+import { buildRemembering, updateRemembering, onRegionEnter } from './remember.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -90,6 +91,7 @@ buildAnimals();
 buildIslands();
 buildWayfarer();
 buildGleaner();
+buildRemembering();
 buildEnemies();
 
 G.player = new Player();
@@ -124,6 +126,9 @@ function applySave(s) {
   if (s.items) Object.assign(G.items, s.items);
   if (s.seen) Object.assign(G.seen, s.seen);
   if (s.tut) Object.assign(G.tut, s.tut);
+  if (s.lore) Object.assign(G.lore, s.lore);
+  if (s.deeds) Object.assign(G.deeds, s.deeds);
+  if (s.regionsSeen) Object.assign(G.regionsSeen, s.regionsSeen);
   if (s.arrows !== undefined) G.player.arrows = s.arrows;
   G.player.pos.set(s.respawn.x, heightAt(s.respawn.x, s.respawn.z), s.respawn.z);
 }
@@ -315,9 +320,13 @@ function updateRegion() {
   }
   if (name !== lastRegion) {
     lastRegion = name;
-    G.ui.region(name);
-    // a soft region-entry motif — each named land greets the wanderer
-    G.audio.chord([392, 493.9, 587.3], 0.07, 0.16);
+    // first-ever entry: the land introduces itself with a letterboxed title
+    // card (remember.js). Later entries get the familiar small reveal.
+    if (!onRegionEnter(name)) {
+      G.ui.region(name);
+      // a soft region-entry motif — each named land greets the wanderer
+      G.audio.chord([392, 493.9, 587.3], 0.07, 0.16);
+    }
   }
 }
 
@@ -411,6 +420,9 @@ function step(dt, now) {
     updateGolems();
     updateIslands();
     updateWayfarer(dt);
+    // frozen while dead: no deed kindles, letter catches, or one-shot
+    // gloamings should play out over the game-over screen
+    if (!G.gameOver) updateRemembering(dt, isNight());
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();
     if (frame % 3 === 0) updatePrompt();

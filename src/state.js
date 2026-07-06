@@ -25,6 +25,10 @@ export const G = {
   seen: { apple: true },   // apples are known from the start (you carry 3)
   buffs: { swiftUntil: 0, vigorUntil: 0 },
   tut: { done: false, hints: {} },
+  // The Remembering: chronicle entries found, deed-stars kindled, regions greeted
+  lore: {},          // {entryId: true} — whisper stones, gloamings, letters, the hart
+  deeds: {},         // {deedId: true} — each lights a star (sky.js reads G.deedStars)
+  regionsSeen: {},   // {regionName: true} — first-entry title cards
 
   // world registries (filled by world.js / enemies.js)
   heightAt: null,       // (x,z) => y  terrain height
@@ -60,6 +64,7 @@ export function save() {
       shrines: G.shrines.map(s => s.active),
       towers: G.towers.map(t => t.active),
       items: G.items, seen: G.seen, tut: G.tut,
+      lore: G.lore, deeds: G.deeds, regionsSeen: G.regionsSeen,
       arrows: G.player ? G.player.arrows : 20,
     }));
   } catch (e) { /* storage unavailable — ignore */ }
