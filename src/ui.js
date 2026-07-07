@@ -628,7 +628,7 @@ export class UI {
   renderPropIcons() {
     if (this.propIcons) return;
     try {
-      const names = ['apple', 'gem', 'arrow', 'feather', 'mushroom', 'shard', 'gear', 'bow'];
+      const names = ['apple', 'gem', 'arrow', 'feather', 'mushroom', 'shard', 'gear', 'bow', 'zephyr_pod'];
       const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
       r.setSize(96, 96);
       const sc = new THREE.Scene();
@@ -708,6 +708,9 @@ export class UI {
         { key: 'gear', model: 'gear', emoji: '⚙️', name: 'ANCIENT GEAR', count: G.items.gear,
           seen: !!G.seen.gear, effect: 'A relic of the sky-works',
           desc: 'A bronze cog from the machines that once held the islands aloft. Somewhere, something misses it.' },
+        { key: 'pod', model: 'zephyr_pod', emoji: '🫙', name: 'ZEPHYR POD', count: G.items.pod,
+          seen: !!G.seen.pod, use: 'pod', effect: 'Use or G: throw — bursts into an updraft',
+          desc: 'A seed pod grown fat on bottled wind. Shake it and it hums like a far-off gale.' },
       ],
       gear: [
         { key: 'bow', model: 'bow', emoji: '🏹', name: 'WIND BOW', count: -1, seen: true,
@@ -722,6 +725,15 @@ export class UI {
         { key: 'glider', emoji: '☂️', name: 'PARAGLIDER', count: -1, seen: true,
           effect: 'Hold SPACE in the air · W dives, S floats',
           desc: 'Maren\'s parting gift. The wind does the rest.' },
+        { key: 'stormcloth', emoji: '🪂', name: 'STORMCLOTH GLIDER', count: -1, seen: !!G.equip.stormcloth,
+          effect: 'Golem-forged: gliding drains far less stamina',
+          desc: 'Canopy silk rewoven with storm-thread by a construct\'s patient hands.' },
+        { key: 'barkgrip', emoji: '🧤', name: 'BARKGRIP GAUNTLETS', count: -1, seen: !!G.equip.barkgrip,
+          effect: 'Golem-forged: climbing costs far less stamina',
+          desc: 'Bronze-jointed gloves that hold stone the way roots do.' },
+        { key: 'quiver', emoji: '🏹', name: 'DEEP QUIVER', count: -1, seen: !!G.equip.quiver,
+          effect: 'Golem-forged: arrow caches yield double',
+          desc: 'It is larger on the inside. The golem would not explain.' },
       ],
     };
   }
@@ -876,6 +888,12 @@ export class UI {
       G.buffs.vigorUntil = G.time + 60;
       this.toast('Starlight hums in your limbs — vigor!', 0xffe066);
       G.audio.sfx('heartup');
+    } else if (key === 'pod' && G.items.pod > 0) {
+      // can't lob ballistically from a paused menu — close the satchel first,
+      // then throw with the live camera (G.throwPod owns the count decrement)
+      this.toggleInventory();
+      if (G.throwPod) G.throwPod();
+      return; // toggleInventory already refreshed/closed the panel
     }
     this.refreshInventory();
   }

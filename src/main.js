@@ -129,6 +129,7 @@ function applySave(s) {
   if (s.lore) Object.assign(G.lore, s.lore);
   if (s.deeds) Object.assign(G.deeds, s.deeds);
   if (s.regionsSeen) Object.assign(G.regionsSeen, s.regionsSeen);
+  if (s.equip) Object.assign(G.equip, s.equip);
   if (s.arrows !== undefined) G.player.arrows = s.arrows;
   G.player.pos.set(s.respawn.x, heightAt(s.respawn.x, s.respawn.z), s.respawn.z);
 }
@@ -170,6 +171,7 @@ window.addEventListener('keydown', (e) => {
     case 'KeyE': tryInteract(); break;
     case 'KeyF': G.player.tryGrab(); break;
     case 'KeyH': eatApple(); break;
+    case 'KeyG': if (G.throwPod) G.throwPod(); break;
     case 'KeyJ':
       if (G.player.aiming) G.player.tryShoot();
       else G.player.tryAttack();
@@ -396,6 +398,17 @@ let simNow = performance.now();
 let doRender = true;
 
 function step(dt, now) {
+  // global hit-stop: a breath of near-frozen time when a melee blow lands.
+  // The timer burns REAL dt (decremented before scaling) so the freeze length
+  // never depends on the freeze itself; everything downstream — G.time,
+  // player, enemies, shader clocks — slows coherently because they all
+  // derive from this one dt.
+  if (G.hitStopT > 0 && G.started && !G.gameOver && !G.cinematic) {
+    G.hitStopT -= dt;
+    dt *= 0.06;
+  }
+  G.hurtAmt = Math.max(0, G.hurtAmt - dt * 2.1); // hurt bloom holds through a freeze, then fades
+
   if (G.started && !G.gameOver) {
     G.time += dt;
     G.player.update(dt);

@@ -21,9 +21,11 @@ export const G = {
   glimmers: 0,
   respawn: { x: 50, y: 0, z: -68 },
   // discovery inventory: special items + which item types have been obtained
-  items: { feather: 0, mushroom: 0, shard: 0, gear: 0 },
+  items: { feather: 0, mushroom: 0, shard: 0, gear: 0, pod: 0 },
   seen: { apple: true },   // apples are known from the start (you carry 3)
   buffs: { swiftUntil: 0, vigorUntil: 0 },
+  // golem-forged permanent upgrades (offer Ancient Gears at the vault golems)
+  equip: { stormcloth: false, barkgrip: false, quiver: false },
   tut: { done: false, hints: {} },
   // The Remembering: chronicle entries found, deed-stars kindled, regions greeted
   lore: {},          // {entryId: true} — whisper stones, gloamings, letters, the hart
@@ -44,6 +46,9 @@ export const G = {
   weather: { kind: 'clear', windMul: 1, wetness: 0 },  // written by sky.js
   updraftZones: [],  // {x,z,r,bottomY,topY,strength,expires?} — registered by world.js
   camShake: 0,       // impulse accumulator; any system may +=, player camera consumes
+  hitStopT: 0,       // global hit-stop seconds remaining (main.js scales sim dt while > 0)
+  hurtAmt: 0,        // directional hurt bloom 0..1 (post.js composite reads, main.js decays)
+  hurtDir: 0,        // screen-relative bearing of the last hit (0 = ahead)
 
   // systems (set in main.js)
   ui: null, audio: null, player: null,
@@ -63,7 +68,7 @@ export function save() {
       respawn: G.respawn,
       shrines: G.shrines.map(s => s.active),
       towers: G.towers.map(t => t.active),
-      items: G.items, seen: G.seen, tut: G.tut,
+      items: G.items, seen: G.seen, tut: G.tut, equip: G.equip,
       lore: G.lore, deeds: G.deeds, regionsSeen: G.regionsSeen,
       arrows: G.player ? G.player.arrows : 20,
     }));

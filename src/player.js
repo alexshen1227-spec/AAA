@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { G } from './state.js';
 import { heightAt, slopeAt, normalAt, WATER_Y, toonMat } from './terrain.js';
 import { clamp, lerp } from './noise.js';
-import { settleCrate, spawnSparkle } from './world.js';
+import { settleCrate, spawnSparkle, gustAt, makeGlow, burnGloomAt } from './world.js';
+import { flameNear, igniteFireNear } from './enemies.js';
 import { HeroRig } from './hero-rig.js';
 import { preloadModels, propInstance } from './assets.js';
 
@@ -84,6 +85,7 @@ export class Player {
     this.bank = 0;           // visual roll from turn rate
     this.prevGlideYaw = 0;
     this.inUpdraft = false;  // edge detect for updraft sfx
+    this.inGust = false;     // edge detect for living-gust surge sfx
     this.exhaustDropT = 0;   // sweat-drop cadence while exhausted
     this.gripDustT = 0;      // climbing grip dust cadence
     // held-prop rotate input (R tap = 90° snap, R hold = free rotate)
@@ -343,11 +345,15 @@ export class Player {
     this.fovKick -= 2.5;         // brief punch-in that springs back
     G.audio.sfx('hurt');
     if (fromX !== undefined) {
+      // screen-relative bearing feeds the post-stack's directional hurt bloom
+      G.hurtDir = Math.atan2(fromX - this.pos.x, fromZ - this.pos.z) - this.camYaw;
+      G.hurtAmt = 1;
       const dx = this.pos.x - fromX, dz = this.pos.z - fromZ;
       const d = Math.hypot(dx, dz) || 1;
       this.vel.x += (dx / d) * 9;
       this.vel.z += (dz / d) * 9;
       this.vel.y = 4;
+      if (this.mode === 'glide') this.glider.visible = false; // the hit slams the canopy shut
       this.mode = 'air';
     }
     if (G.hearts <= 0) {
@@ -528,8 +534,15 @@ export class Player {
       a.add(shaft, head, fl);
       a.visible = false;
       G.scene.add(a);
-      this.arrowPool.push({ g: a, t: -1, stuck: 0, vx: 0, vy: 0, vz: 0 });
+      // glow rides in G.scene, not the arrow group — the GLB swap clears children
+      const glow = makeGlow(0xff9a3d, 1.15);
+      glow.visible = false;
+      G.scene.add(glow);
+      this.arrowPool.push({ g: a, t: -1, stuck: 0, vx: 0, vy: 0, vz: 0, lit: false, emberT: 0, glow });
     }
+    // one shared light for all kindled arrows, granted to the nearest lit one
+    this.emberLight = new THREE.PointLight(0xff9a3d, 0, 14);
+    G.scene.add(this.emberLight);
 
     // swap in the Blender-authored bow + arrows once their GLBs land
     // (procedural stand-ins above cover the load window and any failure)
@@ -566,6 +579,7 @@ export class Player {
     tmp1.copy(tmp2).sub(arrow.g.position).normalize();
     arrow.vx = tmp1.x * 40; arrow.vy = tmp1.y * 40 + 1.2; arrow.vz = tmp1.z * 40;
     arrow.t = 0; arrow.stuck = 0;
+    arrow.lit = false; arrow.emberT = 0;
     arrow.g.visible = true;
     G.audio.sfx('throw');
     G.camShake += 0.04;
@@ -589,14 +603,29 @@ export class Player {
       tmp1.set(a.vx, a.vy, a.vz).normalize();
       tmp2.copy(g.position).add(tmp1);
       g.lookAt(tmp2);
+      // kindling: an arrow drawn through any open flame catches — never
+      // explained anywhere, the world is simply consistent
+      if (!a.lit && flameNear(g.position.x, g.position.y, g.position.z, 1.2)) {
+        a.lit = true;
+        spawnSparkle(g.position.x, g.position.y, g.position.z, 0xffa03c, 8, 2);
+      }
+      if (a.lit) {
+        a.emberT -= dt; // ember trail, sipped from the shared sparkle pool
+        if (a.emberT <= 0) {
+          a.emberT = 0.055;
+          spawnSparkle(g.position.x, g.position.y, g.position.z, 0xff9a3d, 1, 1.1);
+        }
+        igniteFireNear(g.position.x, g.position.y, g.position.z, 1.4);
+      }
       // enemy hit
       for (const e of G.enemies) {
         if (e.dead) continue;
         const dx = e.pos.x - g.position.x, dz = e.pos.z - g.position.z;
         const dy = (e.pos.y + 1.1) - g.position.y;
         if (dx * dx + dz * dz + dy * dy < (e.radius + 0.5) * (e.radius + 0.5)) {
-          e.hurt(2, this.pos);
-          spawnSparkle(g.position.x, g.position.y, g.position.z, 0xffd0a0, 8, 3);
+          e.hurt(a.lit ? 3 : 2, this.pos);
+          spawnSparkle(g.position.x, g.position.y, g.position.z,
+            a.lit ? 0xff8a3c : 0xffd0a0, a.lit ? 14 : 8, 3);
           a.t = -1; g.visible = false;
           break;
         }
@@ -606,14 +635,36 @@ export class Player {
       const gy = heightAt(g.position.x, g.position.z);
       if (g.position.y <= WATER_Y - 0.1 && gy < WATER_Y - 0.5) {
         spawnSparkle(g.position.x, WATER_Y + 0.1, g.position.z, 0xbfe8ff, 5, 1.6);
+        a.lit = false; // doused
         a.t = -1; g.visible = false;
       } else if (g.position.y <= gy + 0.05) {
         a.stuck = a.t + 6; // stand in the turf a while, then fade away
         g.position.y = gy + 0.05;
+        if (a.lit) { // a burning arrowhead scours the gloom where it lands
+          igniteFireNear(g.position.x, g.position.y, g.position.z, 1.7);
+          burnGloomAt(g.position.x, g.position.z, 2.6);
+        }
       } else if (a.t > 5) {
         a.t = -1; g.visible = false;
       }
     }
+    // ember glow + the single shared light, granted to the nearest lit arrow
+    let bestD2 = 1e9, bestA = null;
+    for (const a of this.arrowPool) {
+      const on = a.t >= 0 && a.lit;
+      a.glow.visible = on;
+      if (!on) continue;
+      a.glow.position.copy(a.g.position);
+      a.glow.material.opacity = 0.8 + Math.sin(G.time * 13 + a.emberT * 40) * 0.2;
+      const d2 = a.g.position.distanceToSquared(this.pos);
+      if (d2 < bestD2) { bestD2 = d2; bestA = a; }
+    }
+    if (bestA) {
+      this.emberLight.position.copy(bestA.g.position);
+      this.emberLight.position.y += 0.25;
+      this.emberLight.intensity =
+        (1.1 + Math.sin(G.time * 11) * 0.25) * clamp((40 - Math.sqrt(bestD2)) / 10, 0, 1);
+    } else this.emberLight.intensity = 0;
   }
 
   // ---- combat -----------------------------------------------------------
@@ -756,6 +807,7 @@ export class Player {
       case 'mantle': this.updateMantle(dt); break;
     }
     if (this.mode !== 'air' && this.mode !== 'glide') this.inUpdraft = false;
+    if (this.mode !== 'glide') this.inGust = false;
 
     // attack timing (hit-stop briefly freezes the swing on contact)
     if (this.attackT >= 0) {
@@ -768,6 +820,7 @@ export class Player {
           if (this.attackHitCheck() > 0) {
             G.camShake += 0.15;
             this.hitStop = 0.06;
+            G.hitStopT = Math.max(G.hitStopT, 0.07); // world holds its breath too
           }
         }
         // the rig's swing clips are compressed to ~0.45s — ending here keeps
@@ -804,6 +857,22 @@ export class Player {
       if (this.vel.y < strength) this.vel.y = Math.min(strength, this.vel.y + rate * dt);
       if (!this.inUpdraft) { this.inUpdraft = true; G.audio.sfx('updraft'); }
     } else this.inUpdraft = false;
+  }
+
+  // living gusts: catching a wind line with the canopy open shoves you along it
+  applyGusts(dt) {
+    const gu = gustAt(this.pos.x, this.pos.y, this.pos.z);
+    if (!gu) { this.inGust = false; return; }
+    const along = this.vel.x * gu.dx + this.vel.z * gu.dz;
+    const target = gu.speed + 4.5; // surge past normal glide speed
+    if (along < target) {
+      const add = Math.min(target - along, 30 * gu.s * dt);
+      this.vel.x += gu.dx * add;
+      this.vel.z += gu.dz * add;
+    }
+    // gust lines carry a little lift so catching one stretches the glide
+    if (this.vel.y < 0.8) this.vel.y = Math.min(0.8, this.vel.y + 8 * gu.s * dt);
+    if (!this.inGust) { this.inGust = true; G.audio.sfx('updraft'); this.fovKick += 1.4; }
   }
 
   updateGround(dt, mx, mz, inputLen, k) {
@@ -964,7 +1033,9 @@ export class Player {
     // W = dive (fast, nose-down), S = flare (float, drains stamina ~2x)
     const iz = (k['KeyW'] ? 1 : 0) - (k['KeyS'] ? 1 : 0);
     const dive = iz > 0, flare = iz < 0;
-    if (!k['Space'] || this.exhausted || !this.useStamina((flare ? 13 : 6.5) * dt)) {
+    // stormcloth glider (golem-forged): the canopy sips stamina
+    const cloth = G.equip.stormcloth ? 0.55 : 1;
+    if (!k['Space'] || this.exhausted || !this.useStamina((flare ? 13 : 6.5) * cloth * dt)) {
       this.mode = 'air';
       this.glider.visible = false;
       return;
@@ -978,6 +1049,7 @@ export class Player {
     const gAccel = dive ? 2.2 : 1.6;
     this.vel.x = lerp(this.vel.x, mx * gSpeed, dt * gAccel);
     this.vel.z = lerp(this.vel.z, mz * gSpeed, dt * gAccel);
+    this.applyGusts(dt); // after the lerps so the surge isn't bled back toward input speed
     if (inputLen > 0) {
       const targetYaw = Math.atan2(this.vel.x, this.vel.z);
       let d = targetYaw - this.yaw;
@@ -1021,7 +1093,9 @@ export class Player {
   }
 
   updateClimb(dt, ix, iz, k) {
-    const drain = (Math.abs(ix) + Math.abs(iz)) > 0 ? 7.5 : 2.5;
+    // barkgrip gauntlets (golem-forged): the cliffs ask less of you
+    const grip = G.equip.barkgrip ? 0.6 : 1;
+    const drain = ((Math.abs(ix) + Math.abs(iz)) > 0 ? 7.5 : 2.5) * grip;
     if (!this.useStamina(drain * dt)) {  // stamina gone -> fall
       this.mode = 'air';
       return;
@@ -1029,7 +1103,7 @@ export class Player {
     // climb jump
     if (k['Space'] && !k._spaceLatch) {
       k._spaceLatch = true;
-      if (this.useStamina(12)) {
+      if (this.useStamina(12 * grip)) {
         this.pos.y += 0.1;
         this.vel.set(this.climbNormal.x * 1.5, 7.5, this.climbNormal.z * 1.5);
         this.pos.addScaledVector(this.climbNormal, 0.1);

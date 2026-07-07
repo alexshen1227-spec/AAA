@@ -13,6 +13,7 @@ export const ITEM_DEFS = {
   mushroom: { name: 'Hearty Mushroom', tint: 0xe08a8a, note: 'restores all hearts' },
   shard: { name: 'Star Shard', tint: 0xffe066, note: 'vigor: stamina surges (60s)' },
   gear: { name: 'Ancient Gear', tint: 0xc09a50, note: 'a relic of the old sky-works' },
+  pod: { name: 'Zephyr Pod', tint: 0x9fe8d8, note: 'a bottled updraft — G throws it' },
 };
 
 export function markSeen(kind) {
@@ -378,6 +379,7 @@ export function buildRuins() {
   // pressure-plate vaults at two ruin sites (stone slabs wait nearby)
   buildVault(109, 120, -1, 0, { kind: 'gems', n: 8 });   // by the ruin at (95,125)
   buildVault(-150, -100, 0, 1, { kind: 'glimmer' });     // by the ruin at (-150,-85)
+  buildGolemForges(); // offer Ancient Gears to the sentries beside them
   // the ancient wind bellows at a Heartfields ruin (-35,275)
   buildBellows(-27, 281);
   // lone chests: the highest ring-mountain peak and two quiet ruins
@@ -624,11 +626,11 @@ export function updateAmbient(dt, night) {
       for (const a of bflyAnchors) {
         const tt = t * a.sp + a.ph;
         const flap = 0.25 + Math.abs(Math.sin(tt * 16)) * 0.75; // wing-fold beat
-        tmpM.compose(
-          tmpV.set(a.x + Math.sin(tt * 0.9) * 2.2, a.y + Math.sin(tt * 2.3) * 0.5 + 0.4,
-                   a.z + Math.cos(tt * 0.7) * 2.2),
-          G.camera.quaternion,
-          tmpS.set(flap, 1, 1));
+        tmpV.set(a.x + Math.sin(tt * 0.9) * 2.2, a.y + Math.sin(tt * 2.3) * 0.5 + 0.4,
+                 a.z + Math.cos(tt * 0.7) * 2.2);
+        const gu = gustAt(tmpV.x, tmpV.y, tmpV.z); // butterflies tumble downwind as a gust passes
+        if (gu) tmpV.set(tmpV.x + gu.dx * gu.s * 1.7, tmpV.y + gu.s * 0.55, tmpV.z + gu.dz * gu.s * 1.7);
+        tmpM.compose(tmpV, G.camera.quaternion, tmpS.set(flap, 1, 1));
         bflyMesh.setMatrixAt(k++, tmpM);
       }
       bflyMesh.count = k;
@@ -661,8 +663,11 @@ export function updateAmbient(dt, night) {
     for (const a of leafAnchors) {
       const cyc = ((t * 0.9 + a.ph) % 6) / 6;
       const y = a.y + 5.5 - cyc * 5.2;
+      tmpV.set(a.x + Math.sin(cyc * 12 + a.ph) * 0.9, y, a.z + Math.cos(cyc * 10 + a.ph) * 0.9);
+      const gu = gustAt(tmpV.x, tmpV.y, tmpV.z); // falling leaves ride a passing gust downwind
+      if (gu) { tmpV.x += gu.dx * gu.s * (0.6 + cyc) * 1.5; tmpV.z += gu.dz * gu.s * (0.6 + cyc) * 1.5; }
       tmpM.compose(
-        tmpV.set(a.x + Math.sin(cyc * 12 + a.ph) * 0.9, y, a.z + Math.cos(cyc * 10 + a.ph) * 0.9),
+        tmpV,
         tmpQ.setFromEuler(tmpE.set(cyc * 9 + a.ph, a.ph, cyc * 7)),
         tmpS.setScalar(1));
       leafMesh.setMatrixAt(k++, tmpM);
@@ -1394,8 +1399,9 @@ export function buildGrass() {
     sh.uniforms.uTime = { value: 0 };
     sh.uniforms.uWindMul = { value: 1 }; // weather wind scale (G.weather.windMul)
     sh.uniforms.uPlayer = { value: new THREE.Vector3(0, -999, 0) };
+    sh.uniforms.uGust = { value: new THREE.Vector4(0, 0, 0, 0) }; // x,z, radius, strength — nearest live gust line
     grassSh = sh;
-    sh.vertexShader = 'uniform float uTime;\nuniform float uWindMul;\nuniform vec3 uPlayer;\nvarying float vFade;\nvarying float vTip;\n' + sh.vertexShader.replace(
+    sh.vertexShader = 'uniform float uTime;\nuniform float uWindMul;\nuniform vec3 uPlayer;\nuniform vec4 uGust;\nvarying float vFade;\nvarying float vTip;\n' + sh.vertexShader.replace(
       '#include <begin_vertex>',
       `#include <begin_vertex>
        vTip = position.y / ${BLADE_H.toFixed(2)};
@@ -1403,6 +1409,8 @@ export function buildGrass() {
        // gusts travel across the field; blades ripple as the wave passes
        float gust = sin(dot(wp.xz, vec2(0.045, 0.028)) - uTime * 2.2);
        float gustAmp = (0.55 + 1.15 * max(0.0, gust) * max(0.0, gust)) * uWindMul;
+       // living gusts: blades bend harder where a wind line is passing
+       gustAmp += uGust.w * (1.0 - smoothstep(0.0, uGust.z, distance(wp.xz, uGust.xy)));
        float sway = sin(uTime * 2.3 + wp.x * 0.35 + wp.z * 0.28) * 0.2 * position.y * gustAmp;
        transformed.x += sway;
        transformed.z += sway * 0.35;
@@ -1491,6 +1499,17 @@ export function updateGrass() {
     const w = G.weather;
     grassSh.uniforms.uWindMul.value = (w && w.windMul !== undefined) ? w.windMul : 1;
     grassSh.uniforms.uPlayer.value.copy(G.player.pos);
+    // strongest ground gust near the player bends the blades under it
+    const ug = grassSh.uniforms.uGust.value;
+    ug.set(0, 0, 1, 0);
+    let bestS = 0;
+    for (const g of gusts) {
+      if (g.t < 0 || g.sky) continue;
+      const env = Math.sin((g.t / g.T) * Math.PI);
+      if (env <= bestS) continue;
+      bestS = env;
+      ug.set(g.x, g.z, 3.4, env * 1.5);
+    }
   }
   // canopy/bush sway rides the same per-frame hook
   for (let i = 0; i < swayShaders.length; i++) swayShaders[i].uniforms.uTime.value = G.time;
@@ -1907,6 +1926,7 @@ export function updateCrates(dt) {
   updateVaults(dt);
   updateChestLids(dt);
   updateBellows(dt);
+  updatePods(dt);
   updateUpdraftFx();
   for (let i = G.updraftZones.length - 1; i >= 0; i--) {
     const z = G.updraftZones[i];
@@ -2009,7 +2029,7 @@ function updateChestLids(dt) {
         G.ui.toast('Someone left ' + l.n + ' apples inside. Still crisp!', 0xffb6a3);
         G.audio.sfx('pickup');
       } else if (l.kind === 'arrows') {
-        G.player.arrows += l.n;
+        G.player.arrows += l.n * (G.equip.quiver ? 2 : 1); // deep quiver: caches yield double
         markSeen('arrow');
         G.ui.toast('A bundle of ' + l.n + ' arrows!', 0xf4ecd2);
         G.audio.sfx('pickup');
@@ -2207,10 +2227,10 @@ function glbInstGeo(name) {
 }
 
 function upgradePickupMeshes() {
-  for (const kind of ['apple', 'gem']) {
-    const geo = glbInstGeo(kind);
+  for (const kind of ['apple', 'gem', 'pod']) {
+    const geo = glbInstGeo(kind === 'pod' ? 'zephyr_pod' : kind);
     if (!geo) continue;
-    geo.translate(0, kind === 'apple' ? -0.13 : -0.15, 0); // center like the old geo
+    geo.translate(0, kind === 'apple' ? -0.13 : kind === 'pod' ? -0.22 : -0.15, 0); // center like the old geo
     const old = pickupMeshes[kind];
     const mesh = new THREE.InstancedMesh(geo, toonMat({ vertexColors: true }), old.instanceMatrix.count);
     mesh.frustumCulled = false;
@@ -2225,6 +2245,29 @@ function upgradePickupMeshes() {
 // meadows, glowing gloom-flora in the deep woods, golden hero trees in
 // Thornwood, ouroboros gate emblems on the old roads, and two dormant
 // construct golems standing sentry at the vault ruins.
+const gloomFlora = []; // { root, x, z, seed } — burnable by kindled arrows
+
+// A kindled arrow burns away gloom flora, sometimes revealing what the gloom
+// was hiding (deterministic per plant, so a bush always hides the same thing).
+export function burnGloomAt(x, z, r) {
+  let burned = 0;
+  for (let i = gloomFlora.length - 1; i >= 0; i--) {
+    const f = gloomFlora[i];
+    const dx = x - f.x, dz = z - f.z;
+    if (dx * dx + dz * dz > r * r) continue;
+    gloomFlora.splice(i, 1);
+    f.root.visible = false;
+    const y = heightAt(f.x, f.z);
+    spawnSparkle(f.x, y + 0.8, f.z, 0xff8a3c, 26, 3.4);
+    spawnSparkle(f.x, y + 1.1, f.z, 0x7de89a, 10, 2.2);
+    const roll = hash2(f.seed, 77);
+    if (roll < 0.18) addPickup('gem', f.x, y + 0.4, f.z);
+    else if (roll < 0.45) addPickup('apple', f.x, y + 0.4, f.z);
+    burned++;
+  }
+  return burned;
+}
+
 function dressWorld() {
   const put = (name, x, z, ry = 0, s = 1, sink = 0.1) => {
     const ci = contractInstance(name);
@@ -2261,7 +2304,8 @@ function dressWorld() {
     if (heightAt(x, z) < WATER_Y + 1.5) continue;
     if (fbm(x * 0.006 + 60, z * 0.006 - 33, 3) < 0.3) continue; // deepest woods only
     if (hash2(i, 3311) > 0.06) continue;
-    put('gloom_flora', x, z, hash2(i, 3313) * Math.PI * 2, 0.8 + hash2(i, 3317) * 0.6);
+    const ci = put('gloom_flora', x, z, hash2(i, 3313) * Math.PI * 2, 0.8 + hash2(i, 3317) * 0.6);
+    if (ci) gloomFlora.push({ root: ci.root, x, z, seed: i }); // burnable (kindled arrows)
   }
   // golden hero trees crown the Thornwood
   for (const [x, z, r] of [[78, 196, 0.6], [96, 214, 2.2], [64, 220, 4.0]]) {
@@ -2319,9 +2363,52 @@ function dressWorld() {
     if (!ci) continue;
     G.colliders.push({ x, z, r: 1.2, top: heightAt(x, z) + 2.6 });
     golems.push({ root: ci.root, ph: hash2(x | 0, z | 0) * 9,
+      // energy seams kindle tier by tier as gear is offered (recolor in updateGolems)
+      energyMats: (ci.mats.EnergyAmber || []).concat(ci.mats.EnergyGreen || []),
+      appliedTier: -1,
       parts: ['Head', 'Torso', 'ArmL', 'ArmR', 'ShoulderL', 'ShoulderR']
         .map(n => ci.root.getObjectByName(n)).filter(Boolean)
         .map(o => ({ o, y: o.position.y })) });
+  }
+}
+
+// ---- golem-forged wayfarer gear ---------------------------------------------
+// Offer Ancient Gears to the dormant vault golems and their eyes kindle as
+// they forge permanent upgrades. Registered at fixed coords (not inside
+// dressWorld) so the trade works even if the golem GLB never loads.
+const FORGE_ORDER = [
+  ['stormcloth', 'Stormcloth Glider', 'the canopy sips stamina on the wind'],
+  ['barkgrip', 'Barkgrip Gauntlets', 'the cliffs ask less of you'],
+  ['quiver', 'Deep Quiver', '+10 arrows now — arrow caches yield double'],
+];
+export function equipTier() {
+  return FORGE_ORDER.reduce((n, [k]) => n + (G.equip[k] ? 1 : 0), 0);
+}
+function buildGolemForges() {
+  for (const [x, z] of [[106, 124], [-146, -96]]) {
+    G.interactables.push({
+      pos: new THREE.Vector3(x, heightAt(x, z) + 1.6, z),
+      r: 3.4, label: 'Offer an Ancient Gear',
+      onUse() {
+        const next = FORGE_ORDER.find(([k]) => !G.equip[k]);
+        if (!next) {
+          G.ui.dialog('The Construct', 'The great palm closes, gently. It has given all it holds.', false);
+          return;
+        }
+        if ((G.items.gear || 0) <= 0) {
+          G.ui.dialog('The Construct', 'The palm lies open, waiting. It wants the old gears — the bronze ones the sky-works shed when the islands fell.', false);
+          return;
+        }
+        G.items.gear--;
+        G.equip[next[0]] = true;
+        if (next[0] === 'quiver' && G.player) G.player.arrows += 10;
+        G.camShake += 0.3;
+        G.audio.sfx('shrine');
+        spawnSparkle(x, heightAt(x, z) + 3, z, 0x54e8ff, 30, 3.5);
+        G.ui.banner(next[1], next[2]);
+        save();
+      },
+    });
   }
 }
 
@@ -2329,12 +2416,30 @@ function dressWorld() {
 // the wanderer strays close, the eye flares and the ground trembles once.
 // A sleeping danger, not yet a fight.
 const golems = [];
+// per-forge-tier seam palette: amber sleep -> waking green-cyan -> full awakened
+const TIER_SEAMS = [
+  null, // tier 0: authored amber, untouched
+  { color: 0xc4e4c4, emissive: 0x2f8a6a },
+  { color: 0xaee8da, emissive: 0x3fb8c0 },
+  { color: 0x9feaff, emissive: 0x54e8ff },
+];
 export function updateGolems() {
   const p = G.player ? G.player.pos : null;
+  const tier = equipTier();
   for (const g of golems) {
+    // seams kindle as gear is forged; idempotent, so save-loads recolor too
+    if (g.appliedTier !== tier) {
+      g.appliedTier = tier;
+      const seam = TIER_SEAMS[tier];
+      if (seam) for (const m of g.energyMats) {
+        m.color.setHex(seam.color);
+        m.emissive.setHex(seam.emissive);
+      }
+    }
+    const bobMul = 1 + tier * 0.5; // a waking golem breathes deeper
     for (let i = 0; i < g.parts.length; i++) {
       const pt = g.parts[i];
-      pt.o.position.y = pt.y + Math.sin(G.time * 0.9 + g.ph + i * 1.3) * 0.035;
+      pt.o.position.y = pt.y + Math.sin(G.time * 0.9 + g.ph + i * 1.3) * 0.035 * bobMul;
     }
     if (!p) continue;
     const d = Math.hypot(p.x - g.root.position.x, p.z - g.root.position.z);
@@ -2342,8 +2447,9 @@ export function updateGolems() {
       g.stirred = true;
       G.camShake += 0.35;
       G.audio.sfx('thud');
-      G.ui.toast('The construct stirs in its sleep... best not linger.', 0x9fffc8, 3600);
-      spawnSparkle(g.root.position.x, g.root.position.y + 2.2, g.root.position.z, 0x39ff88, 10, 2);
+      if (tier === 0) G.ui.toast('The construct stirs in its sleep... best not linger.', 0x9fffc8, 3600);
+      spawnSparkle(g.root.position.x, g.root.position.y + 2.2, g.root.position.z,
+        tier > 0 ? 0x54e8ff : 0x39ff88, 10, 2);
     } else if (d > 14 && g.stirred) {
       g.stirred = false; // it settles once you retreat
     }
@@ -2643,7 +2749,7 @@ function updateUpdraftFx() {
 // ---------------------------------------------------------------- pickups
 
 const pickups = [];
-let pickupMeshes = { apple: null, heart: null, gem: null };
+let pickupMeshes = { apple: null, heart: null, gem: null, pod: null };
 
 export function initPickups() {
   const appleGeo = new THREE.SphereGeometry(0.28, 10, 8);
@@ -2652,11 +2758,20 @@ export function initPickups() {
   pickupMeshes.heart = new THREE.InstancedMesh(heartGeo, new THREE.MeshBasicMaterial({ color: 0xff8296 }), 60);
   const gemGeo = new THREE.OctahedronGeometry(0.3);
   pickupMeshes.gem = new THREE.InstancedMesh(gemGeo, new THREE.MeshBasicMaterial({ color: 0x8df0ff }), 60);
+  const podGeo = new THREE.ConeGeometry(0.24, 0.44, 9); // teardrop stand-in until the GLB lands
+  pickupMeshes.pod = new THREE.InstancedMesh(podGeo, toonMat({ color: 0x9fe8d8 }), 24);
   for (const m of Object.values(pickupMeshes)) {
     m.frustumCulled = false;
     m.count = 0;
     G.scene.add(m);
   }
+  // zephyr pods grow where the wind pools: under the sky islands, in the
+  // Thornwood shade, and one by the old bellows as the teaching pod
+  for (const [x, z] of [[72, 188], [92, 214], [64, 222],   // Thornwood
+                        [-23, 275],                          // beside the wind bellows
+                        [146, 40], [-250, -60], [228, -186]] // beneath the sky islands
+  ) addPickup('pod', x, heightAt(x, z) + 0.3, z);
+  G.throwPod = throwPod; // satchel card + G key both route here
   loadGenProps(); // Blender props swap in asynchronously
 }
 
@@ -2666,7 +2781,7 @@ export function addPickup(kind, x, y, z) {
 
 export function updatePickups(dt) {
   const p = G.player.pos;
-  const counts = { apple: 0, heart: 0, gem: 0 };
+  const counts = { apple: 0, heart: 0, gem: 0, pod: 0 };
   for (const pk of pickups) {
     if (pk.gone) continue;
     const mesh = pickupMeshes[pk.kind];
@@ -2682,6 +2797,11 @@ export function updatePickups(dt) {
         G.ui.toast('Recovered a little life.', 0xff8a9a);
       }
       if (pk.kind === 'gem') { G.gems++; markSeen('gem'); G.ui.toast('You got a sky gem!', 0x9fefff); }
+      if (pk.kind === 'pod') {
+        G.items.pod = (G.items.pod || 0) + 1;
+        markSeen('pod');
+        save();
+      }
       G.audio.sfx('pickup');
       continue;
     }
@@ -2694,6 +2814,67 @@ export function updatePickups(dt) {
   for (const [k, m] of Object.entries(pickupMeshes)) {
     m.count = counts[k];
     m.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// ---- zephyr pods: bottled updrafts you can throw ----------------------------
+// G.throwPod (bound in initPickups) lobs one along the camera ray; where it
+// lands, a petal-burst updraft column stands for twelve seconds.
+const flyingPods = []; // pooled {mesh, active, t, vx, vy, vz}
+
+function throwPod() {
+  if (!G.started || G.cinematic || G.gameOver || G.paused) return;
+  if ((G.items.pod || 0) <= 0) { G.ui.toast('No zephyr pods in the satchel...', 0xcccccc); return; }
+  let slot = flyingPods.find(f => !f.active);
+  if (!slot) {
+    if (flyingPods.length >= 3) return; // only so many winds fit in the air at once
+    const mesh = propInstance('zephyr_pod') || new THREE.Mesh(
+      new THREE.ConeGeometry(0.24, 0.44, 9), toonMat({ color: 0x9fe8d8 }));
+    slot = { mesh, active: false, t: 0, vx: 0, vy: 0, vz: 0 };
+    G.scene.add(mesh);
+    flyingPods.push(slot);
+  }
+  G.items.pod--;
+  save();
+  const p = G.player;
+  // converge on the camera ray like the bow shot does, but a gentler lob
+  G.camera.getWorldDirection(tmpV);
+  slot.mesh.position.set(p.pos.x + tmpV.x * 0.7, p.pos.y + 1.5 + tmpV.y * 0.7, p.pos.z + tmpV.z * 0.7);
+  const tx = G.camera.position.x + tmpV.x * 30,
+        ty = G.camera.position.y + tmpV.y * 30,
+        tz = G.camera.position.z + tmpV.z * 30;
+  const dx = tx - slot.mesh.position.x, dy = ty - slot.mesh.position.y, dz = tz - slot.mesh.position.z;
+  const dl = Math.hypot(dx, dy, dz) || 1;
+  slot.vx = (dx / dl) * 20; slot.vy = (dy / dl) * 20 + 3.5; slot.vz = (dz / dl) * 20;
+  slot.t = 0;
+  slot.active = true;
+  slot.mesh.visible = true;
+  G.player.throwT = 0; // borrow the crate-throw pose
+  G.audio.sfx('throw');
+}
+
+function updatePods(dt) {
+  for (const f of flyingPods) {
+    if (!f.active) continue;
+    f.t += dt;
+    f.vy -= 16 * dt; // lighter than a rock — it is a seed pod, after all
+    const m = f.mesh;
+    m.position.x += f.vx * dt;
+    m.position.y += f.vy * dt;
+    m.position.z += f.vz * dt;
+    m.rotation.x += dt * 6;
+    m.rotation.z += dt * 4.5;
+    const gy = Math.max(heightAt(m.position.x, m.position.z), WATER_Y - 0.05);
+    if (m.position.y <= gy + 0.2 || f.t > 6) {
+      f.active = false;
+      m.visible = false;
+      const x = m.position.x, z = m.position.z;
+      G.updraftZones.push({ x, z, r: 3.5, bottomY: gy - 0.5, topY: gy + 26, strength: 15, expires: G.time + 12 });
+      spawnSparkle(x, gy + 0.8, z, 0x9fe8d8, 30, 4.5); // petal burst
+      spawnSparkle(x, gy + 1.4, z, 0xfff2d8, 14, 3);
+      G.audio.sfx('updraft');
+      G.camShake += 0.08;
+    }
   }
 }
 
@@ -2755,9 +2936,35 @@ function updateHealBloom(dt) {
 }
 
 // ---- wind gusts: TotK-style curling wind lines sweeping the meadow ---------
+// One shared travel direction, matched to the grass shader's baked wave
+// (vec2(0.045, 0.028) normalized) so physics and visuals always agree.
 const GUST_N = 7;
+const GUST_DX = 0.849, GUST_DZ = 0.528;
 const gusts = [];
 let gustSpawnT = 2;
+
+// Living gusts: the streaks are rideable. Returns the strongest gust whose
+// capsule (streak segment, r 3, height band ±4.5) contains the point, as
+// {dx, dz, speed, s} with s the 0..1 envelope, or null. Callers each frame:
+// player glide surge, butterfly/leaf drift.
+export function gustAt(px, py, pz) {
+  let best = null, bestS = 0;
+  for (const g of gusts) {
+    if (g.t < 0) continue;
+    const env = Math.sin((g.t / g.T) * Math.PI);
+    if (env <= 0.12) continue;
+    if (Math.abs(py - g.y) > 4.5) continue;
+    const half = g.sky ? 3.6 : 2.2;
+    const rx = px - g.x, rz = pz - g.z;
+    const along = clamp(rx * GUST_DX + rz * GUST_DZ, -half, half);
+    const ox = rx - GUST_DX * along, oz = rz - GUST_DZ * along;
+    const d2 = ox * ox + oz * oz;
+    if (d2 >= 9) continue;
+    const s = env * (1 - Math.sqrt(d2) / 3);
+    if (s > bestS) { bestS = s; best = g; }
+  }
+  return best ? { dx: GUST_DX, dz: GUST_DZ, speed: best.speed, s: bestS } : null;
+}
 
 function initGusts() {
   const geo = new THREE.PlaneGeometry(3.2, 0.055, 8, 1);
@@ -2774,7 +2981,7 @@ function initGusts() {
     }));
     mesh.visible = false;
     G.scene.add(mesh);
-    gusts.push({ mesh, t: -1, T: 2, x: 0, y: 0, z: 0, speed: 10, ph: i * 2.1 });
+    gusts.push({ mesh, t: -1, T: 2, x: 0, y: 0, z: 0, speed: 10, ph: i * 2.1, sky: false, baseY: 0 });
   }
 }
 
@@ -2784,25 +2991,37 @@ function updateGusts(dt) {
   if (!p) return;
   const w = G.weather;
   const windMul = (w && w.windMul) || 1;
-  gustSpawnT -= dt * windMul;
+  const gliding = G.player.mode === 'glide';
+  gustSpawnT -= dt * windMul * (gliding ? 1.7 : 1); // the sky livens up for a glider
   if (gustSpawnT <= 0) {
     gustSpawnT = 2.2 + Math.random() * 3.5;
     for (const g of gusts) {
       if (g.t >= 0) continue;
       g.t = 0;
       g.T = 1.7 + Math.random() * 0.9;
-      const a = Math.random() * Math.PI * 2, d = 8 + Math.random() * 30;
-      g.x = p.x + Math.cos(a) * d;
-      g.z = p.z + Math.sin(a) * d;
-      g.y = heightAt(g.x, g.z);
+      // while gliding, most gusts spawn at canopy height upwind so they sweep
+      // past the rider — a gust line you can wait on and catch
+      g.sky = gliding && Math.random() < 0.65;
+      if (g.sky) {
+        const lat = (Math.random() * 2 - 1) * 9;
+        const back = 6 + Math.random() * 18;
+        g.x = p.x - GUST_DX * back - GUST_DZ * lat;
+        g.z = p.z - GUST_DZ * back + GUST_DX * lat;
+        g.baseY = p.y + (Math.random() * 6 - 2);
+      } else {
+        const a = Math.random() * Math.PI * 2, d = 8 + Math.random() * 30;
+        g.x = p.x + Math.cos(a) * d;
+        g.z = p.z + Math.sin(a) * d;
+      }
+      g.y = g.sky ? g.baseY : heightAt(g.x, g.z);
       if (g.y < WATER_Y) g.y = WATER_Y;
-      g.speed = (8 + Math.random() * 5) * windMul;
+      g.speed = (8 + Math.random() * 5) * windMul * (g.sky ? 1.5 : 1);
+      g.mesh.scale.set(g.sky ? 2.3 : 1, 1, 1);
       g.mesh.visible = true;
       break;
     }
   }
-  // gusts travel along the same wave direction the grass shader uses
-  const dx = 0.849, dz = 0.528;
+  const dx = GUST_DX, dz = GUST_DZ;
   for (const g of gusts) {
     if (g.t < 0) continue;
     g.t += dt;
@@ -2811,11 +3030,13 @@ function updateGusts(dt) {
     g.x += dx * g.speed * dt;
     g.z += dz * g.speed * dt;
     const ground = heightAt(g.x, g.z);
-    g.y += ((Math.max(ground, WATER_Y) + 0.9 + Math.sin(g.t * 5 + g.ph) * 0.35) - g.y) * Math.min(1, dt * 4);
+    const baseY = g.sky ? Math.max(g.baseY, Math.max(ground, WATER_Y) + 0.9)
+      : Math.max(ground, WATER_Y) + 0.9;
+    g.y += ((baseY + Math.sin(g.t * 5 + g.ph) * 0.35) - g.y) * Math.min(1, dt * 4);
     g.mesh.position.set(g.x, g.y, g.z);
     g.mesh.rotation.y = Math.atan2(dx, dz) + Math.PI / 2;
     g.mesh.rotation.x = Math.sin(g.t * 7 + g.ph) * 0.2;
-    g.mesh.material.opacity = Math.sin(k * Math.PI) * 0.5;
+    g.mesh.material.opacity = Math.sin(k * Math.PI) * (g.sky ? 0.66 : 0.5);
   }
 }
 

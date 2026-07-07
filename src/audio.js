@@ -22,6 +22,7 @@ const STEP_GRASS = ['step_grass_1', 'step_grass_2', 'step_grass_3'];
 const COMBAT_STATES = {
   alert: 1, chase: 1, orbit: 1, windup: 1, strike: 1, recover: 1,
   backstep: 1, leap: 1, leapCrouch: 1, throwWind: 1, attack: 1,
+  dive: 1, // razorkite stoop
 };
 
 // linear dt-driven move toward a target (used for all fades; no allocs)
@@ -65,6 +66,15 @@ export class AudioSys {
     this.ambRiverGain = null;
     this.riverProbeT = 0;      // cheap river probe every ~0.5s
     this.riverProx = 0;        // 0 none / 0.5 near / 1 in river
+
+    // war drums: distant camp skins at night + a combat pulse that resolves
+    this.drumProbeT = 0;       // camp-distance probe every ~0.5s
+    this.drumProx = 0;         // 0..1 nearness to the closest living camp
+    this.percW = 0;            // combat percussion weight (eased)
+    this.nextDrum = 0;         // AudioContext-time watermark for the next beat
+    this.drumBeat = 0;         // running beat index (accents every 4th)
+    this.prevAggro = 0;        // for the combat-ends cadence edge
+    this.combatT = 0;          // how long this fight has run (gates the cadence)
   }
 
   start() {
@@ -381,6 +391,74 @@ export class AudioSys {
     this.updateMusicReal(dt, night);
     this.updateMusic();
     this.updateAmbience(dt, night, altitude, gliding);
+    this.updateWarDrums(dt, night);
+  }
+
+  // -------- war drums ------------------------------------------------------
+  // At night you hear a boglin camp before you see it: low skin-drums swelling
+  // as you creep closer. When a fight starts the drums slam into a combat
+  // pulse, and when the last aggroed enemy falls, a falling cadence resolves.
+  // Blood nights stay deliberately silent — the valley holds its breath.
+  updateWarDrums(dt, night) {
+    if (!this.ctx) return;
+    // camp proximity, probed sparsely like the river bed
+    this.drumProbeT -= dt;
+    if (this.drumProbeT <= 0) {
+      this.drumProbeT = 0.5;
+      this.drumProx = 0;
+      const p = G.player && G.player.pos;
+      if (p && night && !G.bloodNight && G.enemies) {
+        let best = 1e9;
+        for (const e of G.enemies) {
+          if (e.dead || !e.camp) continue; // living boglins carry their camp point
+          const dx = e.camp.x - p.x, dz = e.camp.y - p.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < best) best = d2;
+        }
+        if (best < 3600) { // audible inside 60m, full within 16m
+          const d = Math.sqrt(best);
+          this.drumProx = Math.min(1, Math.max(0, 1 - (d - 16) / 44));
+        }
+      }
+    }
+    // aggro count: derived each frame from combat states near the player
+    // (state names cover boglins, hollows, and razorkite stoops alike)
+    let aggro = 0;
+    const p = G.player && G.player.pos;
+    if (p && !G.gameOver && G.enemies) {
+      for (const e of G.enemies) {
+        if (e.dead || !e.pos || !COMBAT_STATES[e.state]) continue;
+        const dx = e.pos.x - p.x, dz = e.pos.z - p.z;
+        if (dx * dx + dz * dz < 2025) aggro++; // 45m
+      }
+    }
+    if (aggro > 0) this.combatT += dt;
+    if (this.prevAggro > 0 && aggro === 0 && this.combatT > 2.5 && !G.gameOver && !G.settings.mute) {
+      // the last one fell — let the drums resolve
+      const t = this.ctx.currentTime;
+      this.pianoNote(196.0, t + 0.06, 0.15, 1.1);
+      this.pianoNote(155.6, t + 0.4, 0.13, 1.3);
+      this.pianoNote(130.8, t + 0.85, 0.17, 2.8);
+      this.blip(58, 0.5, 'sine', 0.3, -20);
+    }
+    if (aggro === 0) this.combatT = 0;
+    this.prevAggro = aggro;
+    this.percW = move(this.percW, aggro > 0 && !G.bloodNight ? 1 : 0, dt * 1.2);
+
+    // one shared beat clock serves both layers; combat quickens the pulse
+    const amb = this.drumProx * 0.55;
+    const cbt = this.percW * 0.95;
+    const vol = Math.max(amb, cbt);
+    if (vol <= 0.04 || G.settings.mute) return;
+    const t = this.ctx.currentTime;
+    if (t < this.nextDrum) return;
+    const interval = this.percW > 0.5 ? 0.36 : 0.62;
+    this.nextDrum = Math.max(t, this.nextDrum) + interval;
+    this.drumBeat++;
+    const accent = this.drumBeat % 4 === 0;
+    this.blip(accent ? 88 : 62, 0.24, 'sine', (accent ? 0.34 : 0.22) * vol, -26);
+    this.noiseBurst(0.05, 320, 0.12 * vol, 1);
+    if (accent && this.percW > 0.5) this.noiseBurst(0.09, 900, 0.07 * vol, 2); // rim crack in combat
   }
 
   // -------- procedural SFX (fallback layer for the sample player) --------
@@ -533,6 +611,13 @@ export class AudioSys {
         break;
       case 'alert':
         if (!this.playBuf('alert', { vol: 0.5 })) this.blip(520, 0.12, 'square', 0.08, 150);
+        break;
+      case 'screech': // razorkite telegraph — a raptor cry, heard before it's seen
+        if (!this.playBuf('screech', { vol: 0.6 })) {
+          this.blip(1800, 0.5, 'sawtooth', 0.11, -900);
+          this.blip(2400, 0.35, 'sawtooth', 0.07, -1400);
+          this.noiseBurst(0.4, 3000, 0.05, 3);
+        }
         break;
       case 'windup':
         if (!this.playBuf('windup', { vol: 0.5 })) this.blip(140, 0.3, 'sawtooth', 0.07, 60);

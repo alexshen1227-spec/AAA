@@ -44,10 +44,13 @@ Object.assign(MODELS, {
   whisper_stone: 'assets/models/blender/whisper_stone.glb',
   cairn: 'assets/models/blender/cairn.glb',
   pale_hart: 'assets/models/blender/pale_hart.glb',
+  // The Wind & The Wild: sail-winged sky predator + throwable bottled updraft
+  razorkite: 'assets/models/blender/razorkite.glb',
+  zephyr_pod: 'assets/models/blender/zephyr_pod.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',
-  'ouroboros_ring', 'tree_autumn', 'waterfall'];
+  'ouroboros_ring', 'tree_autumn', 'waterfall', 'zephyr_pod'];
 
 // curated pack props (CC0 — Kenney / Poly Pizza; credits in assets/licenses)
 Object.assign(MODELS, {

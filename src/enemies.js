@@ -19,10 +19,10 @@
 // lock-on, player attacks and respawnFallen() work unchanged. Until the
 // GLBs finish loading, Hollows simply do not spawn.
 import * as THREE from 'three';
-import { G } from './state.js';
+import { G, save } from './state.js';
 import { heightAt, WATER_Y, toonMat, toonGradient } from './terrain.js';
 import { hash2, clamp, lerp } from './noise.js';
-import { addPickup, spawnSparkle, makeGlow } from './world.js';
+import { addPickup, spawnSparkle, makeGlow, markSeen } from './world.js';
 import { isNight } from './sky.js';
 import { preloadModels, instantiate, findClip, propInstance } from './assets.js';
 
@@ -388,7 +388,7 @@ function buildCamps() {
     glow.position.set(cx, ch + 1.2, cz);
     glow.visible = false;
     G.scene.add(flame, glow);
-    campProps.push({ x: cx, z: cz, y: ch, flame, glow });
+    campProps.push({ x: cx, z: cz, y: ch, flame, glow, lit: false }); // lit: kindled by a burning arrow, persists past dawn
   }
   G.scene.add(trunkIM, headIM, topIM, wingIM, stoneIM, logIM);
 
@@ -402,14 +402,20 @@ function buildCamps() {
   }
 }
 
+// is this camp's fire burning right now? (kindled flag, or the ambient
+// night-lighting within earshot of the player)
+function fireBurning(c, distToPlayer) {
+  return c.lit || (nightNow && distToPlayer < 120);
+}
+
 function updateCamps() {
   const p = G.player.pos;
-  let best = -1, bestD = 1e9;
+  let best = -1, bestD = 1e9; // nearest BURNING fire (owns the light + smoke)
   for (let i = 0; i < campProps.length; i++) {
     const c = campProps[i];
     const d = Math.hypot(p.x - c.x, p.z - c.z);
-    if (d < bestD) { bestD = d; best = i; }
-    const lit = nightNow && d < 120;
+    const lit = fireBurning(c, d);
+    if (lit && d < bestD) { bestD = d; best = i; }
     c.flame.visible = lit;
     c.glow.visible = lit;
     if (lit) {
@@ -418,9 +424,9 @@ function updateCamps() {
       c.glow.scale.setScalar(3.4 * (0.9 + fl * 0.15));
     }
   }
-  // one shared light, granted to the nearest camp, gated by distance + night
+  // one shared light, granted to the nearest burning camp, gated by distance
   if (campLight) {
-    if (nightNow && best >= 0 && bestD < 50) {
+    if (best >= 0 && bestD < 50) {
       const c = campProps[best];
       campLight.position.set(c.x, c.y + 1.6, c.z);
       campLight.intensity =
@@ -430,7 +436,7 @@ function updateCamps() {
     }
   }
   // smoke coils off the nearest lit fire
-  const smokeOn = nightNow && best >= 0 && bestD < 70;
+  const smokeOn = best >= 0 && bestD < 70;
   for (let i = 0; i < campSmoke.length; i++) {
     const puff = campSmoke[i];
     if (!smokeOn) { puff.visible = false; continue; }
@@ -445,6 +451,325 @@ function updateCamps() {
     puff.material.opacity = (1 - cyc) * 0.22;
   }
 }
+
+// ---- kindled arrows: the world's open flames are real ----------------------
+// Is there a burning flame within r of the point? Camp fires + live mage
+// bolts both count — an arrow drawn through either catches fire.
+export function flameNear(x, y, z, r) {
+  const p = G.player.pos;
+  for (const c of campProps) {
+    if (Math.abs(y - (c.y + 0.9)) > 1.7) continue;
+    const dx = x - c.x, dz = z - c.z;
+    if (dx * dx + dz * dz < r * r &&
+        fireBurning(c, Math.hypot(p.x - c.x, p.z - c.z))) return true;
+  }
+  for (const b of bolts) {
+    if (!b.active || b.phase !== 0) continue;
+    const dx = x - b.x, dy = y - b.y, dz = z - b.z;
+    if (dx * dx + dy * dy + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+// A kindled arrow passing an unlit fire ring wakes it — the camp lights
+// early, on the player's terms. Returns true if a fire caught.
+export function igniteFireNear(x, y, z, r) {
+  const p = G.player.pos;
+  let caught = false;
+  for (const c of campProps) {
+    if (c.lit || (nightNow && Math.hypot(p.x - c.x, p.z - c.z) < 120)) continue;
+    if (Math.abs(y - (c.y + 0.75)) > 2.2) continue;
+    const dx = x - c.x, dz = z - c.z;
+    if (dx * dx + dz * dz < r * r) {
+      c.lit = true;
+      caught = true;
+      spawnSparkle(c.x, c.y + 1.0, c.z, 0xffa03c, 22, 3.2);
+      G.audio.sfx('windup');
+    }
+  }
+  return caught;
+}
+
+// ---------------------------------------------------------------- razorkite
+// Sail-winged predators circling the thermals above the skywatch towers and
+// the old bellows. They only hunt what flies: stray into their gyre on the
+// glider (or fall past it) and one folds its wings and comes down at you.
+// Two arrows drop one, and a Swift Feather drifts down where it falls.
+const KITE_SITES = [
+  [110, 20, 46],    // skywatch tower, Heartfields
+  [-200, -140, 46], // skywatch tower, Stormridge approach
+  [-27, 281, 27],   // the wind bellows thermal
+]; // [x, z, orbit height above the ground]
+
+class Razorkite {
+  constructor(x, z, alt, idx) {
+    this.home = new THREE.Vector2(x, z);
+    this.baseY = heightAt(x, z) + alt;
+    this.orbitR = 10 + (idx % 2) * 5;
+    this.orbitDir = idx % 2 ? 1 : -1;
+    this.orbitA = idx * 2.7;
+    this.pos = new THREE.Vector3(
+      x + Math.cos(this.orbitA) * this.orbitR, this.baseY,
+      z + Math.sin(this.orbitA) * this.orbitR);
+    this.yaw = 0;
+    this.hp = this.maxHp = 4; // two arrows
+    this.radius = 1.4;
+    this.state = 'circle';
+    this.stateT = 0;
+    this.dead = false;
+    this.dying = false;
+    this.dyingT = 0;
+    this.isHollow = true; // rides the crimson-moon / night re-knit respawn paths
+    this.nightRespawnUsed = false;
+    this.diveCd = 2 + idx;
+    this.flashT = 0;
+    this.hitstopT = 0;
+    this.dx = 0; this.dy = 0; this.dz = 0; // dive direction
+    this.buildModel();
+  }
+
+  buildModel() {
+    this.group = new THREE.Group();
+    const inner = new THREE.Group();
+    // procedural stand-in: slate sail-shape that reads at distance
+    const bodyMat = rimToon(toonMat({ color: 0x5c5474 }), 0.25, 2.5);
+    const wingMat = toonMat({ color: 0x9c93b8, side: THREE.DoubleSide });
+    const body = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.2, 6), bodyMat);
+    hull.rotation.x = Math.PI / 2;
+    body.add(hull);
+    const head = new THREE.Group();
+    head.position.set(0, 0.03, 0.55);
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.3, 5), toonMat({ color: 0x2e2a33 }));
+    beak.rotation.x = Math.PI / 2;
+    beak.position.z = 0.18;
+    head.add(beak);
+    const wingGeo = new THREE.PlaneGeometry(1.15, 0.65);
+    wingGeo.translate(0.62, 0, -0.1); // pivot at the wing root
+    const wingL = new THREE.Group(), wingR = new THREE.Group();
+    const wL = new THREE.Mesh(wingGeo, wingMat);
+    wL.rotation.x = -Math.PI / 2;
+    const wR = wL.clone();
+    wR.rotation.z = Math.PI;
+    wingL.add(wL); wingR.add(wR);
+    wingL.position.set(0.12, 0.05, 0); wingR.position.set(-0.12, 0.05, 0);
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.03, -0.55);
+    const tm = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.7, 4), bodyMat);
+    tm.rotation.x = -Math.PI / 2;
+    tm.position.z = -0.3;
+    tail.add(tm);
+    inner.add(body, head, wingL, wingR, tail);
+    inner.scale.setScalar(1.4); // predator presence — reads from a glide away
+    this.body = body; this.headGrp = head;
+    this.wingL = wingL; this.wingR = wingR; this.tail = tail;
+    this.group.add(inner);
+    this.group.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    this.cacheMats(inner);
+    this.group.position.copy(this.pos);
+    G.scene.add(this.group);
+    preloadModels(['razorkite']).then(res => {
+      if (res && res.razorkite && !this.dead) this.upgradeModel();
+    }).catch(() => {});
+  }
+
+  // Blender model swap: same holder-wrap contract as the boglin — holders own
+  // pivots and take animate()'s rotation writes; GLB nodes keep their baked
+  // axis-conversion quaternion. Authored facing -Z -> inner.rotation.y = PI.
+  upgradeModel() {
+    const root = propInstance('razorkite');
+    if (!root) return;
+    const inner = new THREE.Group();
+    inner.rotation.y = Math.PI;
+    inner.scale.setScalar(1.4); // predator presence — reads from a glide away
+    const take = (name) => {
+      const node = root.getObjectByName(name);
+      if (!node) return null;
+      const holder = new THREE.Group();
+      holder.position.copy(node.position);
+      node.position.set(0, 0, 0);
+      holder.add(node);
+      inner.add(holder);
+      return holder;
+    };
+    const body = take('body'), head = take('head');
+    const wingL = take('wingL'), wingR = take('wingR'), tail = take('tail');
+    if (!body || !head || !wingL || !wingR || !tail) return; // keep procedural
+    this.group.clear();
+    this.group.add(inner);
+    this.body = body; this.headGrp = head;
+    this.wingL = wingL; this.wingR = wingR; this.tail = tail;
+    this.cacheMats(inner);
+  }
+
+  cacheMats(rootGrp) {
+    const mats = new Set();
+    rootGrp.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => mats.add(m));
+    });
+    this.flashMats = [...mats].filter(m => m.emissive);
+    this.flashBase = this.flashMats.map(m => m.emissive.getHex());
+  }
+
+  setState(s) {
+    this.state = s;
+    this.stateT = 0;
+    if (s === 'windup') G.audio.sfx('screech'); // heard before it is seen
+  }
+
+  hurt(dmg, fromPos) {
+    if (this.dead) return;
+    this.hp -= dmg;
+    this.flashT = 0.15;
+    this.hitstopT = 0.06;
+    G.audio.sfx('hit');
+    // fairness rule: a hit during the telegraph or dive breaks the attack
+    if (this.state === 'windup' || this.state === 'dive') this.setState('recover');
+    if (this.hp <= 0) this.die();
+  }
+
+  die() {
+    this.dead = true;
+    this.dying = true;
+    this.dyingT = 0;
+    this.spinDir = Math.random() < 0.5 ? -1 : 1;
+    G.audio.sfx('die');
+  }
+
+  reawaken() {
+    this.dead = false;
+    this.dying = false;
+    this.hp = this.maxHp;
+    this.diveCd = 4;
+    this.pos.set(
+      this.home.x + Math.cos(this.orbitA) * this.orbitR, this.baseY,
+      this.home.y + Math.sin(this.orbitA) * this.orbitR);
+    this.group.visible = true;
+    this.group.rotation.set(0, 0, 0);
+    this.setState('circle');
+  }
+
+  update(dt) {
+    if (this.dead && !this.dying) return;
+    if (this.dying) { this.updateDying(dt); return; }
+    const p = G.player.pos;
+    const distXZ = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
+    if (distXZ > 120) return; // asleep on the far thermals
+    if (this.hitstopT > 0) { this.hitstopT -= dt; return; }
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      const k = Math.max(0, this.flashT / 0.15);
+      for (let i = 0; i < this.flashMats.length; i++) {
+        this.flashMats[i].emissive.setHex(this.flashBase[i]);
+        this.flashMats[i].emissive.lerp(FLASH_WHITE, k);
+      }
+    }
+    this.stateT += dt;
+    this.diveCd -= dt;
+    const groundBelowPlayer = heightAt(p.x, p.z);
+
+    if (this.state === 'circle') {
+      this.orbitA += this.orbitDir * 0.6 * dt;
+      const tx = this.home.x + Math.cos(this.orbitA) * this.orbitR;
+      const tz = this.home.y + Math.sin(this.orbitA) * this.orbitR;
+      const ty = this.baseY + Math.sin(G.time * 0.7 + this.orbitA) * 1.6;
+      this.pos.x += (tx - this.pos.x) * Math.min(1, dt * 3);
+      this.pos.z += (tz - this.pos.z) * Math.min(1, dt * 3);
+      this.pos.y += (ty - this.pos.y) * Math.min(1, dt * 2);
+      this.yaw = this.orbitA + this.orbitDir * Math.PI / 2 + Math.PI / 2;
+      // sky predators only hunt what flies
+      const airborne = G.player.mode === 'glide' || p.y > groundBelowPlayer + 6;
+      if (this.diveCd <= 0 && airborne && distXZ < 30 && Math.abs(p.y - this.pos.y) < 34) {
+        this.setState('windup');
+      }
+    } else if (this.state === 'windup') {
+      // hang in the air, wings spread, facing the prey — the screech is the tell
+      this.pos.y += dt * 1.4;
+      this.yaw = Math.atan2(p.x - this.pos.x, p.z - this.pos.z);
+      if (this.stateT > 0.85) {
+        const v = G.player.vel;
+        tmp1.set(p.x + v.x * 0.55 - this.pos.x,
+                 p.y + 1.2 + v.y * 0.3 - this.pos.y,
+                 p.z + v.z * 0.55 - this.pos.z).normalize();
+        this.dx = tmp1.x; this.dy = tmp1.y; this.dz = tmp1.z;
+        this.setState('dive');
+        G.audio.sfx('glide');
+      }
+    } else if (this.state === 'dive') {
+      const sp = 25;
+      this.pos.x += this.dx * sp * dt;
+      this.pos.y += this.dy * sp * dt;
+      this.pos.z += this.dz * sp * dt;
+      this.yaw = Math.atan2(this.dx, this.dz);
+      const hd = Math.hypot(p.x - this.pos.x, (p.y + 1.2) - this.pos.y, p.z - this.pos.z);
+      if (hd < 1.7) {
+        if (G.player.iframes <= 0) G.hitStopT = Math.max(G.hitStopT, 0.09);
+        G.player.damage(2, this.pos.x, this.pos.z); // damage() slams the canopy shut
+        G.camShake += 0.2;
+        this.setState('recover');
+      } else if (this.stateT > 2.1 || this.pos.y < heightAt(this.pos.x, this.pos.z) + 1.2) {
+        this.setState('recover'); // pulled up empty-taloned
+      }
+    } else { // recover: climb back to the gyre
+      const tx = this.home.x + Math.cos(this.orbitA) * this.orbitR;
+      const tz = this.home.y + Math.sin(this.orbitA) * this.orbitR;
+      tmp1.set(tx - this.pos.x, this.baseY - this.pos.y, tz - this.pos.z);
+      const d = tmp1.length();
+      if (d < 2.5) {
+        this.setState('circle');
+        this.diveCd = 6 + Math.random() * 3;
+      } else {
+        tmp1.normalize();
+        this.pos.addScaledVector(tmp1, Math.min(d, 13 * dt));
+        this.yaw = Math.atan2(tmp1.x, tmp1.z);
+      }
+    }
+    this.animate(dt);
+  }
+
+  updateDying(dt) {
+    this.dyingT += dt;
+    this.pos.y -= (7 + this.dyingT * 9) * dt;
+    this.pos.x += Math.cos(this.dyingT * 5) * dt * 3;
+    this.pos.z += Math.sin(this.dyingT * 5) * dt * 3;
+    this.group.rotation.z += this.spinDir * dt * 7;
+    this.group.rotation.y += dt * 4;
+    this.group.position.copy(this.pos);
+    const gy = Math.max(heightAt(this.pos.x, this.pos.z), WATER_Y);
+    if (this.pos.y <= gy + 0.3) {
+      this.dying = false;
+      this.group.visible = false;
+      G.items.feather = (G.items.feather || 0) + 1;
+      markSeen('feather');
+      spawnSparkle(this.pos.x, gy + 0.8, this.pos.z, 0x5fd8c0, 22, 3.5);
+      G.ui.toast('A Swift Feather drifts down where the razorkite fell.', 0x5fd8c0, 3600);
+      G.audio.sfx('glimmer');
+      save();
+    }
+  }
+
+  animate(dt) {
+    this.group.position.copy(this.pos);
+    this.group.rotation.y = this.yaw;
+    const diving = this.state === 'dive';
+    const windup = this.state === 'windup';
+    // wings: lazy deep flaps on the gyre, spread high in the telegraph,
+    // folded tight for the stoop
+    const flap = diving ? -1.05
+      : windup ? 0.55 + Math.sin(G.time * 26) * 0.1
+      : Math.sin(G.time * 5.5 + this.orbitA) * 0.4 + 0.12;
+    this.wingL.rotation.z = lerp(this.wingL.rotation.z, flap, Math.min(1, dt * 10));
+    this.wingR.rotation.z = lerp(this.wingR.rotation.z, -flap, Math.min(1, dt * 10));
+    // pitch with the dive; bank into the circle
+    this.group.rotation.x = lerp(this.group.rotation.x, diving ? Math.asin(clamp(-this.dy, -1, 1)) * 0.7 : 0, Math.min(1, dt * 6));
+    this.group.rotation.z = lerp(this.group.rotation.z, this.state === 'circle' ? this.orbitDir * 0.28 : 0, Math.min(1, dt * 4));
+    this.tail.rotation.y = Math.sin(G.time * 3.1 + this.orbitA) * 0.3;
+    this.headGrp.rotation.x = windup ? -0.35 : 0;
+  }
+}
+const FLASH_WHITE = new THREE.Color(0xffffff);
 
 // ---------------------------------------------------------------- boglin
 class Boglin {
@@ -828,10 +1153,18 @@ class Boglin {
 
   dropLoot() {
     const x = this.pos.x, y = this.pos.y + 0.6, z = this.pos.z;
-    if (this.tough) {          // 2 gems + guaranteed heart
+    if (this.tough) {          // 2 gems + guaranteed heart, sometimes an ancient gear
       addPickup('gem', x - 0.5, y, z);
       addPickup('gem', x + 0.5, y, z + 0.3);
       addPickup('heart', x, y, z - 0.4);
+      if (Math.random() < 0.2) { // the bruisers scavenge the old sky-works
+        G.items.gear = (G.items.gear || 0) + 1;
+        markSeen('gear');
+        spawnSparkle(x, y + 0.6, z, 0xc09a50, 18, 3);
+        G.ui.toast('Ancient Gear — a relic of the sky-works', 0xc09a50, 3600);
+        G.audio.sfx('glimmer');
+        save();
+      }
     } else if (this.moss) {    // apple + gem
       addPickup('apple', x - 0.4, y, z);
       addPickup('gem', x + 0.4, y, z);
@@ -1042,6 +1375,7 @@ class Boglin {
         const d = tmp2.length();
         const facing = d > 0.001 ? (tmp2.x / d) * Math.sin(this.yaw) + (tmp2.z / d) * Math.cos(this.yaw) : 1;
         if (d < 2.8 && facing > 0.1) {
+          if (G.player.iframes <= 0) G.hitStopT = Math.max(G.hitStopT, 0.09); // melee connects both ways
           G.player.damage(this.tough ? 4 : 2, this.pos.x, this.pos.z);
           G.camShake += 0.15;
         }
@@ -1149,7 +1483,10 @@ class Boglin {
     const d = Math.hypot(p.x - this.leapTx, p.z - this.leapTz);
     spawnRing(this.leapTx, this.leapTy + 0.12, this.leapTz);
     spawnSparkle(this.leapTx, this.leapTy + 0.4, this.leapTz, 0xb9a888, 20, 5);
-    if (d < 3 && Math.abs(p.y - this.leapTy) < 3) G.player.damage(4, this.leapTx, this.leapTz);
+    if (d < 3 && Math.abs(p.y - this.leapTy) < 3) {
+      if (G.player.iframes <= 0) G.hitStopT = Math.max(G.hitStopT, 0.09);
+      G.player.damage(4, this.leapTx, this.leapTz);
+    }
     if (d < 15) G.camShake += 0.5;
     G.audio.sfx('slam');
     this.leapCd = 7;
@@ -2003,6 +2340,7 @@ class Hollow {
         const facing = d > 0.001
           ? (tmp2.x / d) * Math.sin(this.yaw) + (tmp2.z / d) * Math.cos(this.yaw) : 1;
         if (d < this.range + 0.6 && facing > 0.1) {
+          if (G.player.iframes <= 0) G.hitStopT = Math.max(G.hitStopT, 0.09); // melee connects both ways
           G.player.damage(this.dmg, this.pos.x, this.pos.z);
           G.camShake += this.kind === 'warrior' ? 0.22 : 0.12;
         }
@@ -2151,6 +2489,11 @@ export function buildEnemies() {
       const variant = roll < 0.25 ? 'tough' : roll < 0.4 ? 'moss' : 'normal';
       G.enemies.push(new Boglin(x, z, variant, cx, cz));
     }
+  }
+  // razorkites wheel over the tower and bellows thermals, two to a gyre
+  for (let s = 0; s < KITE_SITES.length; s++) {
+    const [kx, kz, alt] = KITE_SITES[s];
+    for (let i = 0; i < 2; i++) G.enemies.push(new Razorkite(kx, kz, alt, s * 2 + i));
   }
   loadHollows(); // async — the storm-dead rise once their GLBs arrive
 }

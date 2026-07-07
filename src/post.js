@@ -112,6 +112,8 @@ const COMPOSITE_FRAG = /* glsl */`
   uniform float uSaturation;
   uniform float uVignette;
   uniform float uWetness;
+  uniform float uHurtDir;  // screen-relative bearing of the last hit (0 = ahead/top)
+  uniform float uHurtAmt;  // 0..1, decayed by main.js
   varying vec2 vUv;
 
   // ACES filmic fit — identical math to three.js ACESFilmicToneMapping
@@ -181,6 +183,16 @@ const COMPOSITE_FRAG = /* glsl */`
     // gentle vignette, deepened slightly by rain
     float d = length( vUv - 0.5 );
     col *= 1.0 - uVignette * ( 1.0 + 0.4 * uWetness ) * smoothstep( 0.28, 0.78, d );
+
+    // directional hurt: a red bloom seeps in from the screen edge the hit
+    // came from (world +X shows on screen LEFT for this chase cam, hence -sin)
+    if ( uHurtAmt > 0.001 ) {
+      vec2 hd = vec2( -sin( uHurtDir ), cos( uHurtDir ) );
+      vec2 sv = vUv - 0.5;
+      float align = pow( max( dot( sv / max( d, 0.001 ), hd ), 0.0 ), 1.6 );
+      col = mix( col, vec3( 0.42, 0.025, 0.02 ),
+                 uHurtAmt * align * smoothstep( 0.18, 0.6, d ) * 0.85 );
+    }
 
     vec3 srgb = linearToSRGB( col );
 
@@ -277,6 +289,8 @@ export function initPost(renderer) {
         uSaturation: { value: SATURATION },
         uVignette: { value: VIGNETTE },
         uWetness: { value: 0 },
+        uHurtDir: { value: 0 },
+        uHurtAmt: { value: 0 },
       },
       depthTest: false, depthWrite: false, toneMapped: false,
     });
@@ -317,6 +331,8 @@ export function initPost(renderer) {
     function render(scene, camera) {
       // weather grade input (sky.js writes G.weather; defaults keep this 0)
       compU.uWetness.value = G.weather ? G.weather.wetness : 0;
+      compU.uHurtAmt.value = G.hurtAmt || 0;
+      compU.uHurtDir.value = G.hurtDir || 0;
 
       // 1. scene -> HDR target (MSAA auto-resolves at the end of render())
       renderer.setRenderTarget(rtScene);

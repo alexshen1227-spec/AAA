@@ -72,10 +72,52 @@ are rigged (the golem is animated by bobbing its named block nodes in code).
     canopy at heights 3.2 / 2.1 / 1.3 m for drift/spin animation hooks.
 - Materials: Wood, LeafAutumn.
 
+## razorkite.glb — sail-winged aerial predator
+- Size: 2.62 x 0.42 x 2.39 m (wingspan x height x length incl. tail whip);
+  nose-to-tail-base body ~1.35 m. 402 tris. 31 KB.
+- **FACING -Z in glTF** (creature convention — matches pale_hart/boglin, NOT
+  the +Z front used by the nature/structure sets above). `wingL` is on -X.
+- 5 root-level mesh nodes, translation-only, **pivots at the articulation
+  joints** — animate via the boglin/pale_hart holder-wrap pattern (wrap each
+  node in a Group placed at node.position, zero the node, rotate the holder):
+  - `body` — slim faceted fuselage, pivot at body center (0, 0, 0); CreamBelly
+    material on the downward faces.
+  - `head` — skull + hooked charcoal beak + swept crest + emissive amber eyes,
+    pivot at the neck joint **(0, 0.03, -0.44)**.
+  - `wingL` / `wingR` — angular sail membranes (solidified 14 mm, double-sided,
+    dark leading-edge spar strip), pivots at the wing roots
+    **(-/+0.115, 0.045, -0.02)**; rest pose raised 12 deg; flap = rotate the
+    holders around Z (roll axis), opposite signs per side.
+  - `tail` — 1.04 m tapering whip with 3 charcoal barbs, pivot at the tail
+    base **(0, 0.035, +0.55)**; extends rearward to z = +1.59.
+- Materials (custom creature palette, NOT the toon-remap contract):
+  SlateViolet, CreamBelly, DuskMembrane, MembraneEdge, Charcoal, EyeAmber.
+  EyeAmber is the only emissive (1.0, 0.62, 0.08, strength 2.5) and satisfies
+  the amber-eye finder used for boglins (r > 0.5, g > 0.5, b < 0.5).
+
+## zephyr_pod.glb — bottled-updraft seed pod (throwable item)
+- Size: 0.32 x 0.44 x 0.32 m (gourd body to 0.38, leaf-fin tips to 0.44).
+  Origin at base center (min Y = 0). Radially symmetric — no facing. 726 tris.
+  41 KB.
+- 3 mesh nodes:
+  - `Pod` — 10-sided faceted teardrop gourd (PodJade), pivot (0, 0, 0).
+  - `Swirl` — 2.2-wrap raised spiral band embedded into the gourd surface,
+    pivot (0, 0, 0) on the vertical axis — safe to spin around Y; carries the
+    soft cyan emissive for pulsing.
+  - `Cap` — bark collar + curled pig-tail stem + 3 leaf fins, pivot at the
+    neck junction **(0, 0.37, 0)** for wobble/pop hooks.
+- Materials (custom palette): PodJade, SwirlGlow (emissive 0.23/0.53/0.58 —
+  soft cyan; its r < 0.5 keeps it clear of the amber-eye heuristic), CapBark,
+  LeafFin.
+
 ## Provenance / rebuild
 - Build script: scratchpad `build_models.py` (Blender 5.1.2,
   `--background --factory-startup`), deterministic seeds; validation via a
   node GLB parser (magic/JSON chunk/tri counts/bbox); previews rendered per
   model and visually reviewed (2 iteration rounds). Preview renders ship
   alongside as `<name>_preview.png`.
+- razorkite + zephyr_pod: `build_razorkite.py` / `build_zephyr_pod.py`
+  (Blender 5.1.2, same headless pattern, 2-3 iteration rounds each);
+  previews `<name>_preview.png` + `<name>_preview2.png` (razorkite preview2
+  is the from-below belly/membrane check, zephyr preview2 the cap close-up).
 - License: original work for this project (no external assets).
