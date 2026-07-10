@@ -134,6 +134,8 @@ export const CHRONICLE = [
     text: 'The letters lie under the stones beneath the gold trees now. The feather charm turned all the while, like a route being planned. Delivered.' },
   { id: 'hartDone', title: 'The Pale Hart',
     text: 'At dawn a white hart waited, and did not run. It led the way old rivers lead — certain, unhurried — to a glade where a forgotten shrine woke for it. Not for you. That felt right.' },
+  { id: 'sixthVigil', title: 'The Sixth\'s Vigil',
+    text: 'Five crystal tones held together through one cold night, and her echo sang with them at the great crystal. The song was never for the crystals. It was for whoever had to keep them next.' },
   { id: 'driftNote', title: 'The Road Between',
     text: '"THE ROAD IS NOT THE ISLES. THE ROAD IS THE LETTING GO BETWEEN THEM." And beneath, in a courier\'s quick hand: "piet was here. twice. the second time on purpose."' },
   { id: 'undermere1', title: 'The Under-Mere · Unsent — to the First',
