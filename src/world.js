@@ -2692,15 +2692,30 @@ export function updateGolems() {
 
 // kicked from initPickups at boot; every consumer keeps procedural fallbacks
 function loadGenProps() {
-  preloadModels(GEN_PROPS.concat(SIGNATURE_PROPS, PACK_PROPS)).then(() => {
+  preloadModels(GEN_PROPS.concat(SIGNATURE_PROPS, PACK_PROPS, ['warden_door'])).then(() => {
     upgradeChests();
     upgradePickupMeshes();
     upgradeShrines();
     upgradeTowers();
     upgradeBellows();
     upgradeWaterfalls();
+    upgradeVaultDoors();
     dressWorld();
   }).catch(() => {});
+}
+
+// the authored warden door drops into each vault's animated door box: the
+// box turns invisible but keeps carrying the motion and the collider
+function upgradeVaultDoors() {
+  for (const v of vaults) {
+    const inst = propInstance('warden_door');
+    if (!inst) return;
+    inst.rotation.y = Math.PI; // authored facing -Z; the box faces +Z locally
+    inst.scale.set(1, 1.08, 1);
+    v.door.material.visible = false;
+    if (v.emblem) v.emblem.visible = false;
+    v.door.add(inst);
+  }
 }
 
 // ------------------------------------------------- pressure-plate vaults

@@ -450,6 +450,28 @@ export class AudioSys {
         },
       });
     }
+    if (G.lore && G.lore.boglinShrine) {
+      voices.push({
+        w: region === 'Thornwood' ? 3 : 1,
+        play: () => { // the deepwood: a dry leaf-rattle, patient as moss
+          for (let i = 0; i < 3; i++) {
+            this.blip(140 + Math.random() * 50, 0.05, 'square', 0.045, -40 + i * 6);
+          }
+        },
+      });
+    }
+    if (G.lore && G.lore.sixthVigil) {
+      voices.push({
+        w: region === 'Stormridge Massif' ? 3 : 1,
+        play: () => { // the crystal choir: three of her five tones, far away
+          const tones = [261.63, 329.63, 392.0, 440.0, 523.25];
+          const start = (Math.random() * 3) | 0;
+          for (let i = 0; i < 3; i++) {
+            this.pianoNote(tones[start + i], t + i * 0.7, 0.032, 5);
+          }
+        },
+      });
+    }
     if (!voices.length) { this.nextSongline = t + 30; return; }
     let total = 0;
     for (const v of voices) total += v.w;

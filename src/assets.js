@@ -63,6 +63,8 @@ Object.assign(MODELS, {
   // true relic icons for the satchel
   skysong_fork: 'assets/models/blender/skysong_fork.glb',
   warden_sigil: 'assets/models/blender/warden_sigil.glb',
+  // one door, three thresholds: both vaults and the Under-Mere
+  warden_door: 'assets/models/blender/warden_door.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',

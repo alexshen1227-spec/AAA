@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { G, save } from './state.js';
 import { heightAt, slopeAt, WATER_Y, toonMat } from './terrain.js';
 import { spawnSparkle, markSeen, registerStandSurface } from './world.js';
+import { propInstance, preloadModels } from './assets.js';
 
 const UNSENT = [
   {
@@ -125,6 +126,14 @@ function buildUnderMere() {
   const collider = { x: doorX, z: doorZ, r: 1.7, top: y + 4 };
   G.colliders.push(collider);
   door = { slab, collider, openK: 0, baseY: y + 2.0 };
+  // the authored warden door carries the same sinking motion
+  preloadModels(['warden_door']).then(() => {
+    const inst = propInstance('warden_door');
+    if (!inst) return;
+    inst.scale.set(1, 1.1, 1);
+    slab.material.visible = false;
+    slab.add(inst);
+  }).catch(() => { });
 
   G.interactables.push({
     id: 'undermere_door', pos: new THREE.Vector3(doorX, y + 1.4, doorZ), r: 3.2,
