@@ -34,6 +34,7 @@ import { updateEmberside } from './emberside.js';
 import { updateScarf } from './scarf.js';
 import { updateSimmerpot } from './simmerpot.js';
 import { updateJournal } from './journal.js';
+import { updateGubbin } from './gubbin.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -540,6 +541,7 @@ function step(dt, now) {
     if (!G.gameOver) updateVigil(wdt);
     if (!G.gameOver) updateEmberside(wdt);
     if (!G.gameOver) updateSimmerpot(wdt);
+    if (!G.gameOver) updateGubbin(wdt);
     if (!G.gameOver) updateQuests(dt);
     if (!G.gameOver && frame % 30 === 0) updateJournal();
     if (frame % 19 === 0) updateRegion();

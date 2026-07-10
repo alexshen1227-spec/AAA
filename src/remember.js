@@ -134,6 +134,8 @@ export const CHRONICLE = [
     text: 'The letters lie under the stones beneath the gold trees now. The feather charm turned all the while, like a route being planned. Delivered.' },
   { id: 'hartDone', title: 'The Pale Hart',
     text: 'At dawn a white hart waited, and did not run. It led the way old rivers lead — certain, unhurried — to a glade where a forgotten shrine woke for it. Not for you. That felt right.' },
+  { id: 'gubbin', title: 'Gubbin the Craven',
+    text: 'A boglin who ran from his own camp before the red moon and hid under the gold trees, trading a secret for the simple mercy of not being swung at. The moss-kin call him craven. He would rather keep his teeth. Not all of them chose the club — and one of them, at least, chose to be afraid out loud.' },
   { id: 'giantsPalm', title: 'The Giant\'s Palm',
     text: 'The construct\'s open hand lifted you the way you would lift a ladybird — with a care so large it felt like weather. From its shoulder the whole kept valley lay below, and the golem held very still, the way the huge do around the small they love.' },
   { id: 'sixthVigil', title: 'The Sixth\'s Vigil',
