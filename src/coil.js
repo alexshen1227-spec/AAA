@@ -293,6 +293,92 @@ function updateGate(rec, dt) {
   }
 }
 
+// ------------------------------------------------------------ warden echoes
+// Each statue at the heart names the place its warden kept. Read a name, and
+// on clear nights an amber echo stands at that place, still keeping it.
+// Stand with all eight and a star kindles ("The Eight Names" deed).
+
+const WARDEN_EPITAPHS = [
+  { x: 60, z: -80, line: 'THE FIRST kept the plateau light. Where the first beacon answers, she watched the old road for travelers who never came.' },
+  { x: 110, z: 20, line: 'THE SECOND kept the watchers. From the Heartfields tower he counted every wing that crossed the valley, and forgot none.' },
+  { x: -150, z: 118, line: 'THE THIRD kept the Mirrormere. She walked the shore when the lanterns were young, and the lake held her reflection kindly.' },
+  { x: 78, z: 196, line: 'THE FOURTH kept the gold trees of Thornwood, and named each falling leaf before it landed.' },
+  { x: -27, z: 281, line: 'THE FIFTH kept the great horn. The bellows still hold the shape of her breath.' },
+  { x: -104, z: -232, line: 'THE SIXTH kept the Stormridge crystals, and sang to them on the cold nights so they would not dim.' },
+  { x: 109, z: 120, line: 'THE SEVENTH kept the eastern vault, and the construct that kneels beside it. They were, in the end, friends.' },
+  { x: -150, z: -100, line: 'THE EIGHTH kept the western vault. Maerwen, who wrote the letter. She waited the longest.' },
+];
+
+const WARDEN_MEETINGS = [
+  'The echo turns from the beacon to look at you. It does not speak. It bows, the way one warden greets another.',
+  'The echo is counting something far above. It pauses, marks you on its unseen ledger, and seems glad of the entry.',
+  'The echo stands where the water meets the stones. For a moment there are two reflections in the Mirrormere, and both are yours.',
+  'A gold leaf falls through the echo. It watches the leaf land, then looks at you, as if to say: that one was named for you.',
+  'The echo rests a hand on the old horn. The bellows sighs — one soft note, held for a hundred years, finally let go.',
+  'The echo hums, too low to hear. The nearest crystal brightens all the same. It has not forgotten the song.',
+  'The echo kneels beside the kneeling construct, and for one breath the amber light and the storm-green seams pulse together.',
+  'Maerwen\'s echo holds an unsent letter. She looks at you a long time. Then the letter is gone, and her hands are folded, and she is smiling.',
+];
+
+const echoes = []; // {index, group, mat, glow, it, y}
+
+function buildEchoSites() {
+  for (let i = 0; i < WARDEN_EPITAPHS.length; i++) {
+    const site = WARDEN_EPITAPHS[i];
+    const y = heightAt(site.x, site.z);
+    const group = makeGhost();
+    group.position.set(site.x, y, site.z);
+    G.scene.add(group);
+    const glow = makeRuneGlow();
+    glow.material.color.setHex(0xffc27a);
+    glow.position.y = 1.1;
+    group.add(glow);
+    const rec = { index: i, group, mat: group.userData.mat, glow, y };
+    const it = {
+      id: `warden_echo_${i}`,
+      pos: new THREE.Vector3(site.x, y + 1, site.z), r: 3.2,
+      label: 'Stand with the echo',
+      onUse() { meetEcho(rec); },
+    };
+    rec.it = it;
+    G.interactables.push(it);
+    echoes.push(rec);
+  }
+}
+
+function echoVisible(rec) {
+  const night = G.dayTime < 0.21 || G.dayTime > 0.79;
+  return night && flag(`wardenName_${rec.index}`) && !flag(`wardenMet_${rec.index}`);
+}
+
+function meetEcho(rec) {
+  if (!echoVisible(rec)) {
+    if (G.ui) G.ui.dialog('A KEPT PLACE',
+      'Nothing stands here now. But the grass is pressed, as if someone keeps returning.', false);
+    return;
+  }
+  setStoryFlag(`wardenMet_${rec.index}`, true);
+  if (G.ui) G.ui.dialog('A WARDEN\'S ECHO', WARDEN_MEETINGS[rec.index], false);
+  spawnSparkle(rec.group.position.x, rec.y + 1.4, rec.group.position.z, 0xffc27a, 34, 4);
+  if (G.audio) G.audio.chord([293.66 * Math.pow(1.122, rec.index), 440], 0.08, 0.5);
+  const met = WARDEN_EPITAPHS.reduce((n, _, i) => n + (flag(`wardenMet_${i}`) ? 1 : 0), 0);
+  if (G.ui && met < WARDEN_EPITAPHS.length) {
+    G.ui.toast(`The echo settles — ${met} of ${WARDEN_EPITAPHS.length} wardens stood with.`, 0xffc27a, 4600);
+  }
+}
+
+function updateEchoes(dt) {
+  for (const rec of echoes) {
+    const target = echoVisible(rec) ? 0.3 : 0;
+    rec.mat.opacity += (target - rec.mat.opacity) * Math.min(1, dt * 1.5);
+    rec.glow.material.opacity = rec.mat.opacity * 0.9;
+    if (rec.mat.opacity > 0.02 && G.player) {
+      rec.group.rotation.y = Math.atan2(
+        G.player.pos.x - rec.group.position.x, G.player.pos.z - rec.group.position.z);
+    }
+  }
+}
+
 // ============================================================ the Coil island
 // A great stone ring in the sky above the old drifting isle. Three stations —
 // a carried crate, a leap across the broken arc, a climb into the still air —
@@ -544,6 +630,25 @@ function placeHeartProps() {
       G.scene.add(root);
       G.colliders.push({ x: px, z: pz, r: 0.5, top: HEART_Y + 1.2 });
       island.statues.push({ root, mats: inst ? inst.mats : {}, index: i - 1 });
+
+      // read a warden's name, and its echo begins keeping its place at night
+      const statueIndex = i - 1;
+      G.interactables.push({
+        id: `warden_statue_${statueIndex}`,
+        pos: new THREE.Vector3(px, HEART_Y + 1.1, pz), r: 2.6,
+        label: 'Read the warden\'s name',
+        onUse() {
+          const first = !flag(`wardenName_${statueIndex}`);
+          if (first) setStoryFlag(`wardenName_${statueIndex}`, true);
+          if (G.ui) {
+            G.ui.dialog('THE PEDESTAL READS', WARDEN_EPITAPHS[statueIndex].line, false);
+            if (first && !flag(`wardenMet_${statueIndex}`)) {
+              G.ui.toast('On a clear night, that place will not be empty.', 0xffc27a, 4600);
+            }
+          }
+          if (G.audio) G.audio.sfx('lock');
+        },
+      });
 
       // an amber silhouette waits, unseen, beside each statue
       const ghost = makeGhost();
@@ -811,6 +916,7 @@ export function buildCoil() {
   for (const spec of GATES) gates.push({ ...spec });
   buildRingGeometry();
   buildStations();
+  buildEchoSites();
   preloadModels(['ouroboros_ring', 'warden_statue', 'ninth_pedestal']).then(() => {
     for (const rec of gates) buildGate(rec, contractInstance('ouroboros_ring'));
     placeHeartProps();
@@ -829,6 +935,7 @@ export function updateCoil(dt = 0) {
   applyGateVisuals();
   for (const rec of gates) updateGate(rec, step);
   updateIsland(step);
+  updateEchoes(step);
 }
 
 export function getCoilSummary() {

@@ -91,6 +91,7 @@ export const DEEDS = [
   { id: 'longglide', verse: 'The Long Glide', hint: 'Ride the wind, unlanding, a long while.' },
   { id: 'skyhigh', verse: 'Above the Clouds', hint: 'Stand where only birds have stood.' },
   { id: 'mirror', verse: "The Mirror's Guest", hint: 'Swim the Mirrormere by moonlight.' },
+  { id: 'echoes', verse: 'The Eight Names', hint: "Stand with every warden's echo." },
 ];
 
 // Chronicle page order: the stones' story, then the echoes, then Piet.
@@ -598,6 +599,12 @@ const DEED_CHECKS = {
   skyhigh: () => G.player.pos.y > 80,
   mirror: () => G.player.mode === 'swim' && isNight() &&
     Math.hypot(G.player.pos.x + 170, G.player.pos.z - 120) < 32,
+  echoes: () => {
+    const f = G.story && G.story.flags;
+    if (!f) return false;
+    for (let i = 0; i < 8; i++) if (!f['wardenMet_' + i]) return false;
+    return true;
+  },
 };
 
 function syncStars() {
