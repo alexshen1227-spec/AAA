@@ -457,8 +457,9 @@ let flock = null, nextFlockAt = 30; // migrating V-formation, every minute or so
 export function buildBirds() {
   const wing = new THREE.PlaneGeometry(1.15, 0.38);
   wing.translate(0.57, 0, 0); // pivot at the body
+  // capacity: circling pairs + the migrating V (14) + thermal riders (8)
   birdMesh = new THREE.InstancedMesh(wing,
-    new THREE.MeshBasicMaterial({ color: 0x25292f, side: THREE.DoubleSide }), BIRDS * 2 + 14);
+    new THREE.MeshBasicMaterial({ color: 0x25292f, side: THREE.DoubleSide }), BIRDS * 2 + 14 + 8);
   birdMesh.frustumCulled = false;
   G.scene.add(birdMesh);
 }
@@ -509,6 +510,32 @@ export function updateBirds(night) {
           birdMesh.setMatrixAt(k++, tmpM);
         }
       }
+    }
+  }
+  // thermal riders: four birds live on the standing winds, spiraling up a
+  // column with wings held stiff, then peeling off to fall and catch it
+  // again — the updrafts made readable from across the valley
+  let thermals = 0;
+  for (let zi = 0; zi < G.updraftZones.length && thermals < 4; zi++) {
+    const zn = G.updraftZones[zi];
+    if (zn.expires !== undefined || zn.topY - zn.bottomY < 25) continue;
+    const b = thermals++;
+    const span = zn.topY - zn.bottomY;
+    const climb = ((G.time * 4.2 + b * 17) % (span + 14));
+    const soaring = climb < span;             // past the top: the peel-off dive
+    const y = soaring ? zn.bottomY + 6 + climb * ((span - 6) / span)
+      : zn.topY - (climb - span) * 2.2;
+    const a = G.time * (soaring ? 1.4 : 0.5) + b * 2.4;
+    const rr = zn.r + (soaring ? 0.8 : 4.5);
+    const x = zn.x + Math.cos(a) * rr, z = zn.z + Math.sin(a) * rr;
+    const heading = a + Math.PI / 2;
+    const flap = soaring ? Math.sin(G.time * 1.2 + b) * 0.08   // stiff soar
+      : Math.sin(G.time * 7 + b * 2) * 0.55;                    // working wings
+    for (const side of [-1, 1]) {
+      eul.set(soaring ? 0.12 : -0.2, heading, flap * side, 'YXZ');
+      tmpQ.setFromEuler(eul);
+      tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(side, 1, 1));
+      birdMesh.setMatrixAt(k++, tmpM);
     }
   }
   birdMesh.count = k;
