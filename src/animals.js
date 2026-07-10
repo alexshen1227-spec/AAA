@@ -579,12 +579,21 @@ export function buildAnimals() {
   preloadModels(['rabbit']).then(res => {
     if (res && res.rabbit) for (const r of rabbits) upgradeRabbitOne(r, r.seed);
   }).catch(() => { });
-  // fish: sleek dark shapes circling under the Mirrormere
+  // fish: sleek dark shapes circling under the Mirrormere. A stretched sphere
+  // is the fallback; the authored fish geometry swaps into the same
+  // InstancedMesh once it loads (still one draw call for the whole shoal).
   fishMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.16, 7, 5),
     toonMat({ color: 0x4a6a78 }), 10);
   fishMesh.frustumCulled = false;
   G.scene.add(fishMesh);
+  preloadModels(['fish']).then(res => {
+    if (!res || !res.fish || !fishMesh) return;
+    const inst = propInstance('fish');
+    let geo = null;
+    if (inst) inst.traverse(o => { if (o.isMesh && !geo) geo = o.geometry; });
+    if (geo) { fishMesh.geometry = geo; fishScale = [1, 1, 1]; } // authored at real size
+  }).catch(() => { });
   for (let i = 0; i < 10; i++) {
     fish.push({
       cx: LAKE.x + (hash2(i, 2201) - 0.5) * 60,
@@ -602,6 +611,9 @@ const _fq = new THREE.Quaternion();
 const _fe = new THREE.Euler();
 const _fm = new THREE.Matrix4();
 const _fs = new THREE.Vector3();
+// the sphere fallback needs stretching into a fish; the authored fish already
+// is one, so it swaps this to unit scale
+let fishScale = [2.2, 0.8, 0.7];
 
 export function updateAnimals(dt, night) {
   const p = G.player.pos;
@@ -636,7 +648,7 @@ export function updateAnimals(dt, night) {
       }
       const heading = -t + MODEL_FORWARD_TO_GAME_FORWARD;
       _fq.setFromEuler(_fe.set(f.jumpT >= 0 ? -Math.cos((f.jumpT / 0.85) * Math.PI) * 0.7 : 0, heading, 0, 'YXZ'));
-      _fm.compose(tmpV.set(x, y, z), _fq, _fs.set(2.2, 0.8, 0.7));
+      _fm.compose(tmpV.set(x, y, z), _fq, _fs.set(fishScale[0], fishScale[1], fishScale[2]));
       fishMesh.setMatrixAt(k++, _fm);
     }
     fishMesh.count = k;
