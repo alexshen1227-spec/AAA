@@ -785,6 +785,9 @@ export class UI {
         { key: 'pod', model: 'zephyr_pod', emoji: '🫙', name: 'ZEPHYR POD', count: G.items.pod,
           seen: !!G.seen.pod, use: 'pod', effect: 'Use or G: throw — bursts into an updraft',
           desc: 'A seed pod grown fat on bottled wind. Shake it and it hums like a far-off gale.' },
+        { key: 'sigil', model: 'ninth_pedestal', emoji: '🐍', name: 'THE WARDEN\'S SIGIL', count: G.items.sigil,
+          seen: !!G.seen.sigil, effect: 'The ninth pedestal\'s answer',
+          desc: 'A small bronze ouroboros, still warm. Eight wardens kept the valley. The ninth was always going to be you.' },
       ],
       gear: [
         { key: 'bow', model: 'bow', emoji: '🏹', name: 'WIND BOW', count: -1, seen: true,

@@ -237,6 +237,7 @@ function normalizeSave(raw) {
       shard: finiteNumber(items.shard, 0, 0, 999, true),
       gear: finiteNumber(items.gear, 0, 0, 999, true),
       pod: finiteNumber(items.pod, 0, 0, 999, true),
+      sigil: finiteNumber(items.sigil, 0, 0, 9, true),
     },
     seen: boolRecord(raw.seen),
     tut,

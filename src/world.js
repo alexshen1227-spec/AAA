@@ -15,6 +15,7 @@ export const ITEM_DEFS = {
   shard: { name: 'Star Shard', tint: 0xffe066, note: 'vigor: stamina surges (60s)' },
   gear: { name: 'Ancient Gear', tint: 0xc09a50, note: 'a relic of the old sky-works' },
   pod: { name: 'Zephyr Pod', tint: 0x9fe8d8, note: 'a bottled updraft — G throws it' },
+  sigil: { name: 'The Warden\'s Sigil', tint: 0x9fffc8, note: 'the ninth pedestal\'s answer' },
 };
 
 export function markSeen(kind) {
@@ -1820,6 +1821,26 @@ function initGrabbable(mesh, kind, size, heavy) {
   });
 }
 
+// let other modules (the Coil island) offer prop-resting surfaces and crates
+// that live inside this module's grabbable physics
+export function registerStandSurface(surface) { standSurfaces.push(surface); }
+export function makePuzzleCrate(x, y, z) {
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6),
+    toonMat({ color: 0xa8814f }));
+  const edgeMat = toonMat({ color: 0x6e5433 });
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.25, 1.7), edgeMat);
+  frame.position.y = 0.7; crate.add(frame);
+  const frame2 = frame.clone(); frame2.position.y = -0.7; crate.add(frame2);
+  crate.position.set(x, y + 0.8, z);
+  crate.castShadow = crate.receiveShadow = true;
+  initGrabbable(crate, 'crate', CRATE_SIZE, false);
+  crate.userData.floorY = y + 0.8;
+  G.scene.add(crate);
+  G.grabbables.push(crate);
+  G.climbMeshes.push(crate);
+  return crate;
+}
+
 export function buildCrates() {
   const clusters = [[68, -72], [52, -90], [-24, 46], [176, 96], [-166, 124], [-86, -204], [114, 284]];
   const geo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
@@ -2403,11 +2424,8 @@ function dressWorld() {
     put('tree_autumn', x, z, r, 1.5, 0.15);
     G.colliders.push({ x, z, r: 0.8, top: heightAt(x, z) + 5 });
   }
-  // ouroboros gate emblems mark the old roads to the towers
-  for (const [x, z, ry] of [[97, 7, 0.9], [-47, 203, 2.4]]) {
-    const ci = put('ouroboros_ring', x, z, ry, 1.6, -1.2);
-    if (ci) ci.root.position.y = heightAt(x, z) + 1.2;
-  }
+  // the ouroboros gate emblems on the old roads are owned by coil.js now —
+  // they carry main-quest state (phase glow, attunement, the joined wind)
   // --- curated pack dressing (CC0 Kenney / Poly Pizza) ---------------------
   const putPack = (name, x, z, ry = 0, s = 1) => {
     const m = propInstance(name);

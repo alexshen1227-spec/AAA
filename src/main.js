@@ -21,6 +21,7 @@ import { initOpening, updateOpening } from './opening.js';
 import { buildRemembering, updateRemembering, onRegionEnter } from './remember.js';
 import { buildQuests, updateQuests } from './quests.js';
 import { buildAdventure, updateAdventure } from './adventure.js';
+import { buildCoil, updateCoil } from './coil.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -98,6 +99,7 @@ buildGleaner();
 buildRemembering();
 buildEnemies();
 buildAdventure();
+buildCoil();
 
 G.player = new Player();
 G.ui = new UI();
@@ -494,6 +496,7 @@ function step(dt, now) {
     // gloamings should play out over the game-over screen
     if (!G.gameOver) updateRemembering(dt, isNight());
     if (!G.gameOver) updateAdventure(dt, isNight());
+    if (!G.gameOver) updateCoil(dt);
     if (!G.gameOver) updateQuests(dt);
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();

@@ -47,6 +47,9 @@ Object.assign(MODELS, {
   // The Wind & The Wild: sail-winged sky predator + throwable bottled updraft
   razorkite: 'assets/models/blender/razorkite.glb',
   zephyr_pod: 'assets/models/blender/zephyr_pod.glb',
+  // The Coil: the eight warden statues and the empty ninth pedestal
+  warden_statue: 'assets/models/blender/warden_statue.glb',
+  ninth_pedestal: 'assets/models/blender/ninth_pedestal.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',
