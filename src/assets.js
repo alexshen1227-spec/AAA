@@ -157,11 +157,39 @@ export function toonifyProp(root) {
       m = new THREE.MeshToonMaterial({
         color: src.color ? src.color.clone() : new THREE.Color(0xffffff),
         gradientMap: toonGradient,
+        map: src.map || null,
+        lightMap: src.lightMap || null,
+        lightMapIntensity: src.lightMapIntensity !== undefined ? src.lightMapIntensity : 1,
+        aoMap: src.aoMap || null,
+        aoMapIntensity: src.aoMapIntensity !== undefined ? src.aoMapIntensity : 1,
+        emissiveMap: src.emissiveMap || null,
+        bumpMap: src.bumpMap || null,
+        bumpScale: src.bumpScale !== undefined ? src.bumpScale : 1,
+        normalMap: src.normalMap || null,
+        displacementMap: src.displacementMap || null,
+        displacementScale: src.displacementScale !== undefined ? src.displacementScale : 1,
+        displacementBias: src.displacementBias !== undefined ? src.displacementBias : 0,
+        alphaMap: src.alphaMap || null,
+        transparent: !!src.transparent,
+        opacity: src.opacity !== undefined ? src.opacity : 1,
+        alphaTest: src.alphaTest || 0,
+        side: src.side,
+        vertexColors: !!src.vertexColors,
+        depthWrite: src.depthWrite,
+        depthTest: src.depthTest,
       });
+      m.name = src.name ? src.name + '_AerwynToon' : 'AerwynToon';
+      if (src.normalScale && m.normalScale) m.normalScale.copy(src.normalScale);
       if (src.emissive && (src.emissive.r + src.emissive.g + src.emissive.b) > 0.01) {
         m.emissive.copy(src.emissive);
         m.emissiveIntensity = src.emissiveIntensity !== undefined ? src.emissiveIntensity : 1;
       }
+      // Preserve intentionally additive/glass-like materials. Signature props
+      // still use contractInstance(), whose authored palette remains in charge.
+      m.blending = src.blending;
+      m.premultipliedAlpha = src.premultipliedAlpha;
+      m.dithering = src.dithering;
+      m.toneMapped = src.toneMapped;
       conv.set(src, m);
     }
     o.material = m;

@@ -1,11 +1,12 @@
 // World population: forests, rocks, swaying grass, ancient beacons (shrines),
 // skywatch towers, movable crates, hidden glimmers, and pickups.
 import * as THREE from 'three';
-import { G, save } from './state.js';
+import { G, save, GLIMMER_TOTAL } from './state.js';
 import { heightAt, slopeAt, WATER_Y, toonMat, toonGradient, grassColorAt } from './terrain.js';
 import { fbm, hash2, smoothstep, clamp } from './noise.js';
 import { mergeGeometries } from './BufferGeometryUtils.js';
 import { preloadModels, propInstance, contractInstance, GEN_PROPS, SIGNATURE_PROPS, PACK_PROPS } from './assets.js';
+import { signalQuestEvent } from './quests.js';
 
 // special chest-loot items: discovery inventory entries with use-effects
 export const ITEM_DEFS = {
@@ -28,6 +29,50 @@ const tmpQ = new THREE.Quaternion();
 const tmpV = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
+
+// Stable one-shot world progress. The scene is built before a save is chosen,
+// so records keep their stable IDs and syncWorldProgress() reconciles visuals
+// immediately after applySave(). Objects created later also consult the same
+// sparse maps when they are registered.
+const glimmerSites = []; // {id, it, applyCollected, applied}
+
+function worldBucket(kind) {
+  if (!G.worldState) G.worldState = { chests: {}, glimmers: {}, pickups: {}, vaults: {} };
+  if (!G.worldState[kind]) G.worldState[kind] = {};
+  return G.worldState[kind];
+}
+
+function worldClaimed(kind, id) { return !!(id && worldBucket(kind)[id]); }
+
+function claimWorld(kind, id) {
+  if (!id || worldClaimed(kind, id)) return false;
+  worldBucket(kind)[id] = true;
+  return true;
+}
+
+function refreshGlimmerCount() {
+  G.glimmers = Math.min(GLIMMER_TOTAL, Object.keys(worldBucket('glimmers')).length);
+}
+
+function claimGlimmer(id) {
+  if (!claimWorld('glimmers', id)) return false;
+  refreshGlimmerCount();
+  return true;
+}
+
+function registerGlimmer(id, it, applyCollected = null) {
+  const rec = { id, it, applyCollected, applied: false };
+  glimmerSites.push(rec);
+  if (worldClaimed('glimmers', id)) applyCollectedGlimmer(rec);
+  return rec;
+}
+
+function applyCollectedGlimmer(rec) {
+  if (rec.applied) return;
+  rec.applied = true;
+  if (rec.it) rec.it.gone = true;
+  if (rec.applyCollected) rec.applyCollected();
+}
 
 // ---------------------------------------------------------------- trees
 
@@ -153,7 +198,9 @@ export function buildForests() {
       const n = 1 + ((hash2(i, 67) * 3) | 0);
       for (let a = 0; a < n; a++) {
         const ang = hash2(i, 71 + a) * Math.PI * 2;
-        addPickup('apple', x + Math.cos(ang) * 2.0 * s, y + (3.6 + hash2(i, 73 + a) * 1.6) * s, z + Math.sin(ang) * 2.0 * s);
+        addPickup('apple', x + Math.cos(ang) * 2.0 * s,
+          y + (3.6 + hash2(i, 73 + a) * 1.6) * s,
+          z + Math.sin(ang) * 2.0 * s, `pickup.tree.${i}.${a}`);
       }
     }
   });
@@ -377,23 +424,27 @@ export function buildRuins() {
   G.scene.add(colMesh, blockMesh, linMesh, floorMesh);
 
   // pressure-plate vaults at two ruin sites (stone slabs wait nearby)
-  buildVault(109, 120, -1, 0, { kind: 'gems', n: 8 });   // by the ruin at (95,125)
-  buildVault(-150, -100, 0, 1, { kind: 'glimmer' });     // by the ruin at (-150,-85)
+  buildVault('vault.east', 109, 120, -1, 0, { kind: 'gems', n: 8 });   // by the ruin at (95,125)
+  buildVault('vault.west', -150, -100, 0, 1,
+    { kind: 'glimmer', glimmerId: 'glimmer.vault-west' });              // by the ruin at (-150,-85)
   buildGolemForges(); // offer Ancient Gears to the sentries beside them
   // the ancient wind bellows at a Heartfields ruin (-35,275)
   buildBellows(-27, 281);
   // lone chests: the highest ring-mountain peak and two quiet ruins
-  makeChest(-238, heightAt(-238, 394), 394, 2.4, { kind: 'gems', n: 3 });
-  makeChest(-252, heightAt(-252, 100), 100, hash2(7, 55) * Math.PI * 2, { kind: 'apples', n: 2 });
-  makeChest(211, heightAt(211, 29), 29, hash2(4, 55) * Math.PI * 2, { kind: 'apples', n: 2 });
+  makeChest('chest.peak-ring', -238, heightAt(-238, 394), 394, 2.4, { kind: 'gems', n: 3 });
+  makeChest('chest.ruin-west-apples', -252, heightAt(-252, 100), 100,
+    hash2(7, 55) * Math.PI * 2, { kind: 'apples', n: 2 });
+  makeChest('chest.ruin-east-apples', 211, heightAt(211, 29), 29,
+    hash2(4, 55) * Math.PI * 2, { kind: 'apples', n: 2 });
   // relic chests: special items worth going out of the way for
-  makeChest(66, heightAt(66, -95), -95, 1.2, { kind: 'feather' });          // plateau rim
-  makeChest(-44, heightAt(-44, 52), 52, 2.8, { kind: 'mushroom' });         // by the western beacon
-  makeChest(150, heightAt(150, -63), -63, 0.4, { kind: 'shard' });          // east grove
-  makeChest(84, heightAt(84, 206), 206, 2.0, { kind: 'gear' });             // golden Thornwood
-  makeChest(-160, heightAt(-160, 90), 90, 1.0, { kind: 'arrows', n: 10 });  // Mirrormere shore
-  makeChest(37, heightAt(37, 125), 125, 0.6, { kind: 'mushroom' });
-  makeChest(216, heightAt(216, 120), 120, 2.4, { kind: 'feather' });
+  makeChest('chest.plateau-feather', 66, heightAt(66, -95), -95, 1.2, { kind: 'feather' });
+  makeChest('chest.beacon-mushroom', -44, heightAt(-44, 52), 52, 2.8, { kind: 'mushroom' });
+  makeChest('chest.east-shard', 150, heightAt(150, -63), -63, 0.4, { kind: 'shard' });
+  makeChest('chest.thornwood-gear', 84, heightAt(84, 206), 206, 2.0, { kind: 'gear' });
+  makeChest('chest.mirrormere-arrows', -160, heightAt(-160, 90), 90, 1.0,
+    { kind: 'arrows', n: 10 });
+  makeChest('chest.ruin-north-mushroom', 37, heightAt(37, 125), 125, 0.6, { kind: 'mushroom' });
+  makeChest('chest.heartfields-feather', 216, heightAt(216, 120), 120, 2.4, { kind: 'feather' });
 }
 
 // ------------------------------------------------------------- birds & fireflies
@@ -900,43 +951,51 @@ export function buildIslands() {
 
     if (reachable) {
       // treasure for those who learn the wind
-      addPickup('gem', x + 2, topY + 0.6, z + 1);
-      addPickup('gem', x - 2.5, topY + 0.6, z - 1.5);
-      addPickup('gem', x + 0.5, topY + 0.6, z - 3);
-      addPickup('apple', x - 1, topY + 0.7, z + 3);
-      G.interactables.push({
+      addPickup('gem', x + 2, topY + 0.6, z + 1, `pickup.island.${ii}.gem.0`);
+      addPickup('gem', x - 2.5, topY + 0.6, z - 1.5, `pickup.island.${ii}.gem.1`);
+      addPickup('gem', x + 0.5, topY + 0.6, z - 3, `pickup.island.${ii}.gem.2`);
+      addPickup('apple', x - 1, topY + 0.7, z + 3, `pickup.island.${ii}.apple`);
+      const glimmerId = `glimmer.island.${ii}`;
+      const it = {
         pos: new THREE.Vector3(x, topY, z), r: 5, label: 'Stand in the sky',
         onUse() {
           if (this.gone) return;
-          this.gone = true;
-          G.glimmers++;
+          if (!claimGlimmer(glimmerId)) { this.gone = true; return; }
+          applyCollectedGlimmer(glimmerSites.find(g => g.id === glimmerId));
           spawnSparkle(x, topY + 2, z, 0x9fffb0, 40, 5);
           G.ui.toast('A glimmer rides the wind up here! "You found the sky!"', 0x9fffb0);
           G.audio.sfx('glimmer');
           save();
         },
-      });
+      };
+      G.interactables.push(it);
+      registerGlimmer(glimmerId, it);
     } else {
       // far islands: reached by riding the permanent updraft columns
-      addPickup('gem', x + 2.2, topY + 0.6, z + 1.4);
-      addPickup('gem', x - 2.4, topY + 0.6, z - 1.8);
-      addPickup('gem', x + 0.4, topY + 0.6, z - 3.2);
-      addPickup('apple', x - 1.4, topY + 0.7, z + 2.8);
+      addPickup('gem', x + 2.2, topY + 0.6, z + 1.4, `pickup.island.${ii}.gem.0`);
+      addPickup('gem', x - 2.4, topY + 0.6, z - 1.8, `pickup.island.${ii}.gem.1`);
+      addPickup('gem', x + 0.4, topY + 0.6, z - 3.2, `pickup.island.${ii}.gem.2`);
+      addPickup('apple', x - 1.4, topY + 0.7, z + 2.8, `pickup.island.${ii}.apple`);
       const toast = FAR_TOASTS[(ii - 1) % FAR_TOASTS.length];
-      G.interactables.push({
+      const glimmerId = `glimmer.island.${ii}`;
+      const it = {
         pos: new THREE.Vector3(x, topY, z), r: 5, label: 'Stand in the sky',
         onUse() {
           if (this.gone) return;
-          this.gone = true;
-          G.glimmers++;
+          if (!claimGlimmer(glimmerId)) { this.gone = true; return; }
+          applyCollectedGlimmer(glimmerSites.find(g => g.id === glimmerId));
           spawnSparkle(x, topY + 2, z, 0x9fffb0, 40, 5);
           G.ui.toast(toast, 0x9fffb0);
           G.audio.sfx('glimmer');
           save();
         },
-      });
-      makeChest(x - r * 0.38, topY, z + r * 0.34, hash2(ii, 57) * Math.PI * 2,
-        FAR_LOOT[(ii - 1) % FAR_LOOT.length]);
+      };
+      G.interactables.push(it);
+      registerGlimmer(glimmerId, it);
+      const islandLoot = { ...FAR_LOOT[(ii - 1) % FAR_LOOT.length] };
+      if (islandLoot.kind === 'glimmer') islandLoot.glimmerId = `glimmer.island-chest.${ii}`;
+      makeChest(`chest.island.${ii}`, x - r * 0.38, topY, z + r * 0.34,
+        hash2(ii, 57) * Math.PI * 2, islandLoot);
     }
   });
   buildCairns();
@@ -1065,6 +1124,7 @@ function buildPeakGlimmers() {
   const geo = new THREE.IcosahedronGeometry(0.5, 0);
   const mat = toonMat({ color: 0xb9c4d6 }); // wind-scoured summit stone
   chosen.forEach((p, i) => {
+    const glimmerId = `glimmer.peak.${i}`;
     const y = heightAt(p.x, p.z);
     const rock = new THREE.Mesh(geo, mat);
     rock.position.set(p.x, y + 0.2, p.z);
@@ -1074,19 +1134,20 @@ function buildPeakGlimmers() {
     glow.position.set(p.x, y + 1.1, p.z);
     G.scene.add(rock, glow);
     const toast = PEAK_TOASTS[i % PEAK_TOASTS.length];
-    G.interactables.push({
+    const it = {
       pos: rock.position, r: 3, label: 'Feel the high wind',
       onUse() {
         if (this.gone) return;
-        this.gone = true;
-        glow.visible = false;
-        G.glimmers++;
+        if (!claimGlimmer(glimmerId)) { this.gone = true; return; }
+        applyCollectedGlimmer(glimmerSites.find(g => g.id === glimmerId));
         spawnSparkle(p.x, y + 1, p.z, 0x9fffb0, 34, 5);
         G.ui.toast(toast, 0x9fffb0);
         G.audio.sfx('glimmer');
         save();
       },
-    });
+    };
+    G.interactables.push(it);
+    registerGlimmer(glimmerId, it, () => { glow.visible = false; });
   });
 }
 
@@ -1189,7 +1250,8 @@ export function buildWayfarer() {
 // Tilla, the Gleaner — a recurring character with a real quest chain:
 // stage 0: asks for 3 apples (her stores fell with the sky-ruin)
 // stage 1: asks you to inspect the fallen ruin on the meadow
-// stage 2: rewards + a running thread about the sky-works
+// stage 2: waits for the promised report-back
+// stage 3: rewards + a running thread about the sky-works
 export function buildGleaner() {
   const x = 22, z = -102;
   const y = heightAt(x, z);
@@ -1219,6 +1281,7 @@ export function buildGleaner() {
         if (G.apples >= 3) {
           G.apples -= 3;
           q.tilla = 1;
+          signalQuestEvent('tilla_apples_delivered');
           G.ui.dialog('TILLA, THE GLEANER',
             'Three whole apples! Bless your quick feet. Now — a harder favor. That ruin that fell by the plateau... something GLOWS in it at night. Go and lay a hand on it, would you? I dare not.', true);
           G.audio.sfx('pickup');
@@ -1230,6 +1293,16 @@ export function buildGleaner() {
       } else if (q.tilla === 1) {
         G.ui.dialog('TILLA, THE GLEANER',
           'The fallen stone, wanderer — by the plateau, west of the beacon. Touch it and come tell me it is dead metal and my nights can be quiet again.', true);
+      } else if (q.tilla === 2) {
+        q.tilla = 3;
+        signalQuestEvent('tilla_reported');
+        G.items.feather = (G.items.feather || 0) + 1;
+        markSeen('feather');
+        G.ui.dialog('TILLA, THE GLEANER',
+          'Still warm? Then the sky-works are NOT dead — only sleeping. Maren must hear of this. You came back when you said you would, wanderer. Keep this feather, and keep your eyes up.', false);
+        G.ui.toast('Tilla’s thanks — Swift Feather received', 0x9fffc8, 4600);
+        G.audio.sfx('glimmer');
+        save();
       } else {
         G.ui.dialog('TILLA, THE GLEANER',
           'Still warm, was it? Then the sky-works are NOT dead — only sleeping. Maren must hear of this... Keep the feather, and keep your eyes up.', false);
@@ -1246,11 +1319,10 @@ export function buildGleaner() {
       const q = G.tut.quests || (G.tut.quests = { tilla: 0 });
       if (q.tilla === 1) {
         q.tilla = 2;
-        G.items.feather = (G.items.feather || 0) + 1;
-        markSeen('feather');
+        signalQuestEvent('tilla_stone_touched');
         spawnSparkle(30, heightAt(30, -96) + 1.5, -96, 0x39ff88, 24, 4);
-        G.ui.toast('The stone hums under your palm — still warm. A Swift Feather was wedged in the wreck!', 0x9fffc8, 5200);
-        G.audio.sfx('glimmer');
+        G.ui.toast('The stone hums under your palm — still warm. Return to Tilla with the news.', 0x9fffc8, 5200);
+        G.audio.sfx('lock');
         save();
       } else {
         G.ui.toast('Old stone and oxidized bronze. It thrums, very faintly.', 0xbcb3a0);
@@ -1273,7 +1345,7 @@ export function updateWayfarer(dt) {
     while (diff < -Math.PI) diff += Math.PI * 2;
     npc.group.rotation.y += diff * Math.min(1, dt * 4);
   } else {
-    G.ui.dialog('', null); // walk away -> close the box
+    G.ui.dialog('MAREN, THE GREY WAYFARER', null); // close only Maren's own conversation
   }
 }
 
@@ -1340,6 +1412,7 @@ export function buildGlimmers() {
   const rockGeo = new THREE.IcosahedronGeometry(0.7, 0);
   const rockMat = toonMat({ color: 0x9c9284 });
   places.forEach(([x, z], i) => {
+    const glimmerId = `glimmer.forest.${i}`;
     const y = heightAt(x, z);
     if (y < WATER_Y + 0.5) return;
     const rock = new THREE.Mesh(rockGeo, rockMat);
@@ -1347,18 +1420,22 @@ export function buildGlimmers() {
     rock.rotation.set(hash2(i, 3) * 3, hash2(i, 5) * 3, 0);
     rock.castShadow = true;
     G.scene.add(rock);
-    G.interactables.push({
+    const it = {
       pos: rock.position, r: 2.4, label: 'Lift rock',
       onUse() {
         if (this.gone) return;
-        this.gone = true;
-        rock.position.y += 1.2; rock.position.x += 0.9;
-        G.glimmers++;
+        if (!claimGlimmer(glimmerId)) { this.gone = true; return; }
+        applyCollectedGlimmer(glimmerSites.find(g => g.id === glimmerId));
         spawnSparkle(rock.position.x, rock.position.y + 0.6, rock.position.z, 0x9fffb0);
         G.ui.toast('A forest glimmer! "Tee-hee!"', 0x9fffb0);
         G.audio.sfx('glimmer');
         save();
       },
+    };
+    G.interactables.push(it);
+    registerGlimmer(glimmerId, it, () => {
+      rock.position.y += 1.2;
+      rock.position.x += 0.9;
     });
   });
 }
@@ -1939,7 +2016,15 @@ export function updateCrates(dt) {
 const chests = [];
 let chestKit = null;
 
-function makeChest(x, y, z, yaw, loot, gate) {
+function applyOpenedChest(chest) {
+  chest.opening = true;
+  chest.done = true;
+  chest.t = 0.5;
+  if (chest.it) chest.it.gone = true;
+  chest.lid.rotation.x = chest.openAngle || -1.9;
+}
+
+function makeChest(id, x, y, z, yaw, loot, gate) {
   if (!chestKit) {
     chestKit = {
       baseGeo: new THREE.BoxGeometry(0.95, 0.52, 0.62),
@@ -1969,9 +2054,9 @@ function makeChest(x, y, z, yaw, loot, gate) {
   g.add(base, band, lock, lid);
   g.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
   G.scene.add(g);
-  const chest = { x, y, z, grp: g, lid, loot, opening: false, t: 0, done: false };
+  const chest = { id, x, y, z, grp: g, lid, loot, opening: false, t: 0, done: false, it: null };
   chests.push(chest);
-  G.interactables.push({
+  const it = {
     pos: new THREE.Vector3(x, y + 0.4, z), r: 2.4, label: 'Open chest',
     onUse() {
       if (this.gone || chest.opening) return;
@@ -1980,7 +2065,10 @@ function makeChest(x, y, z, yaw, loot, gate) {
       chest.opening = true;
       G.audio.sfx('grab');
     },
-  });
+  };
+  chest.it = it;
+  G.interactables.push(it);
+  if (worldClaimed('chests', id)) applyOpenedChest(chest);
   return chest;
 }
 
@@ -2017,6 +2105,7 @@ function updateChestLids(dt) {
     ch.lid.rotation.x = e * (ch.openAngle || -1.9);
     if (f >= 1) {
       ch.done = true;
+      claimWorld('chests', ch.id);
       spawnSparkle(ch.x, ch.y + 0.9, ch.z, 0xffdf8a, 32, 4);
       const l = ch.loot;
       if (l.kind === 'gems') {
@@ -2039,13 +2128,15 @@ function updateChestLids(dt) {
         itemFlourish(ch, l.kind);
         G.ui.toast(ITEM_DEFS[l.kind].name + ' — ' + ITEM_DEFS[l.kind].note, ITEM_DEFS[l.kind].tint, 4600);
         G.audio.sfx('heartup');
-        save();
-      } else {
-        G.glimmers++;
-        G.ui.toast('A glimmer was napping inside! "Rude! ...Tee-hee."', 0x9fffb0);
-        G.audio.sfx('glimmer');
-        save();
+      } else if (l.kind === 'glimmer') {
+        if (claimGlimmer(l.glimmerId)) {
+          G.ui.toast('A glimmer was napping inside! "Rude! ...Tee-hee."', 0x9fffb0);
+          G.audio.sfx('glimmer');
+        } else {
+          G.ui.toast('Only a warm leaf-print remains inside.', 0xcfc4a6);
+        }
       }
+      save();
     }
   }
 }
@@ -2473,7 +2564,16 @@ function loadGenProps() {
 
 const vaults = [];
 
-function buildVault(cx, cz, fx, fz, loot) {
+function applyOpenedVault(v) {
+  v.open = true;
+  v.doorT = 1.2;
+  v.emblem.material.opacity = 0.95;
+  v.door.position.y = v.doorBaseY - 3.1;
+  v.doorCol.top = v.y0 + 0.3;
+  v.ring.material.opacity = 0.9;
+}
+
+function buildVault(id, cx, cz, fx, fz, loot) {
   const y0 = heightAt(cx, cz);
   const rx = fz, rz = -fx; // right basis (f rotated -90°)
   const yaw = Math.atan2(fx, fz);
@@ -2533,14 +2633,15 @@ function buildVault(cx, cz, fx, fz, loot) {
   G.colliders.push({ x: px, z: pz, r: 1.7, top: plateTop, soft: true });
 
   const vault = {
-    cx, cz, y0, fx, fz, door, doorCol, emblem,
+    id, cx, cz, y0, fx, fz, door, doorCol, emblem,
     doorBaseY: door.position.y, doorTop: top,
     plate, plateBaseY: plate.position.y, plateTop, px, pz, ring,
     sink: 0, open: false, doorT: 0,
   };
   vaults.push(vault);
+  if (worldClaimed('vaults', id)) applyOpenedVault(vault);
 
-  makeChest(cx - fx * 0.55, y0 + 0.35, cz - fz * 0.55, yaw, loot, () => {
+  makeChest(`${id}.chest`, cx - fx * 0.55, y0 + 0.35, cz - fz * 0.55, yaw, loot, () => {
     if (vault.open) return true;
     G.ui.toast('Sealed away — the stone door still stands.', 0x9ff4ff);
     return false;
@@ -2574,9 +2675,12 @@ function updateVaults(dt) {
     v.ring.material.opacity = v.open ? 0.9 : Math.min(0.7, (0.22 + load * 0.14) * pulse);
     if (!v.open && load >= 3) {
       v.open = true;
+      claimWorld('vaults', v.id);
+      signalQuestEvent('vault_opened', { id: v.id });
       v.emblem.material.opacity = 0.95;
       G.ui.toast('Stone grinds — the vault seal releases!', 0x9ff4ff);
       G.audio.sfx('lock');
+      save();
     }
     if (v.open && v.doorT < 1.2) {
       const prev = v.doorT;
@@ -2654,9 +2758,9 @@ function buildBellows(x, z) {
   ig.add(cap, rock);
   G.scene.add(ig);
   G.colliders.push({ x, z, r: 3.5, top: capY, soft: true });
-  makeChest(x + 1.1, capY, z - 0.9, 2.1, { kind: 'gems', n: 3 });
-  addPickup('gem', x - 1.6, capY + 0.6, z + 1.2);
-  addPickup('apple', x - 0.4, capY + 0.7, z + 2.2);
+  makeChest('chest.bellows-cache', x + 1.1, capY, z - 0.9, 2.1, { kind: 'gems', n: 3 });
+  addPickup('gem', x - 1.6, capY + 0.6, z + 1.2, 'pickup.bellows.gem');
+  addPickup('apple', x - 0.4, capY + 0.7, z + 2.2, 'pickup.bellows.apple');
 }
 
 function updateBellows(dt) {
@@ -2767,16 +2871,21 @@ export function initPickups() {
   }
   // zephyr pods grow where the wind pools: under the sky islands, in the
   // Thornwood shade, and one by the old bellows as the teaching pod
-  for (const [x, z] of [[72, 188], [92, 214], [64, 222],   // Thornwood
-                        [-23, 275],                          // beside the wind bellows
-                        [146, 40], [-250, -60], [228, -186]] // beneath the sky islands
-  ) addPickup('pod', x, heightAt(x, z) + 0.3, z);
+  const podSpots = [[72, 188], [92, 214], [64, 222],       // Thornwood
+                    [-23, 275],                              // beside the wind bellows
+                    [146, 40], [-250, -60], [228, -186]];   // beneath the sky islands
+  podSpots.forEach(([x, z], i) =>
+    addPickup('pod', x, heightAt(x, z) + 0.3, z, `pickup.pod.${i}`));
   G.throwPod = throwPod; // satchel card + G key both route here
   loadGenProps(); // Blender props swap in asynchronously
 }
 
-export function addPickup(kind, x, y, z) {
-  pickups.push({ kind, x, y, z, gone: false, bob: hash2(pickups.length, 501) * 6 });
+export function addPickup(kind, x, y, z, id = null) {
+  pickups.push({
+    id, kind, x, y, z,
+    gone: worldClaimed('pickups', id),
+    bob: hash2(pickups.length, 501) * 6,
+  });
 }
 
 export function updatePickups(dt) {
@@ -2789,6 +2898,7 @@ export function updatePickups(dt) {
     // collect on touch (hearts/gems) or via E (apples handled here too — walk close)
     const dist = Math.hypot(p.x - pk.x, (p.y + 1) - (pk.y + dy), p.z - pk.z);
     if (dist < 1.6) {
+      if (pk.id && !claimWorld('pickups', pk.id)) { pk.gone = true; continue; }
       pk.gone = true;
       if (pk.kind === 'apple') { G.apples++; G.ui.toast('You got an apple! (H to eat)', 0xffb6a3); }
       if (pk.kind === 'heart') {
@@ -2803,6 +2913,7 @@ export function updatePickups(dt) {
         save();
       }
       G.audio.sfx('pickup');
+      if (pk.id) save();
       continue;
     }
     if (counts[pk.kind] < mesh.instanceMatrix.count) { // instanceMatrix.count == mesh capacity
@@ -2815,6 +2926,28 @@ export function updatePickups(dt) {
     m.count = counts[k];
     m.instanceMatrix.needsUpdate = true;
   }
+}
+
+// Called after a validated save is applied. The world is intentionally built
+// before the title choice, so this pass reconciles every already-created
+// one-shot object without rebuilding the scene or replaying rewards.
+export function syncWorldProgress() {
+  for (const rec of glimmerSites) {
+    if (worldClaimed('glimmers', rec.id)) applyCollectedGlimmer(rec);
+  }
+  for (const ch of chests) {
+    if (worldClaimed('chests', ch.id)) applyOpenedChest(ch);
+  }
+  for (const pk of pickups) {
+    if (pk.id && worldClaimed('pickups', pk.id)) pk.gone = true;
+  }
+  for (const v of vaults) {
+    if (worldClaimed('vaults', v.id)) {
+      applyOpenedVault(v);
+      signalQuestEvent('vault_opened', { id: v.id });
+    }
+  }
+  refreshGlimmerCount();
 }
 
 // ---- zephyr pods: bottled updrafts you can throw ----------------------------

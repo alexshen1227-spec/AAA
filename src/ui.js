@@ -1,12 +1,13 @@
 // HUD & screens: hearts, stamina wheel, counters, minimap, full map, compass,
 // toasts, banners, interaction prompt, pause panel, title / game-over screens.
-import { G } from './state.js';
+import { G, save, setPauseReason, GLIMMER_TOTAL } from './state.js';
 import * as THREE from 'three';
 import { renderMapImage, renderMapImageAsync, inRiver } from './terrain.js';
 import { propInstance } from './assets.js';
 import { spawnHealBloom } from './world.js';
 import { clamp } from './noise.js';
 import { CHRONICLE, DEEDS } from './remember.js';
+import { getActiveObjective, getQuestLog, setActiveQuest } from './quests.js';
 
 const WX_GLYPH = { clear: '☀', breeze: '🍃', overcast: '☁', rain: '☔', storm: '⚡' };
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
@@ -135,6 +136,7 @@ export class UI {
     this.lastMoon = null;
     this.objT = -10;              // last objective refresh (G.time)
     this.lastObj = null;
+    this.activeObjective = null;
     this.hintIdx = -1;
   }
 
@@ -309,6 +311,19 @@ export class UI {
       ctx.strokeStyle = '#10202a'; ctx.lineWidth = 1; ctx.stroke();
     }
 
+    // Active quest target: a small gold diamond that turns the journal into
+    // real navigation without overwhelming undiscovered map information.
+    const qt = this.activeObjective && this.activeObjective.target;
+    if (qt) {
+      const [mx, my] = toMap(qt.x, qt.z);
+      if (mx > -8 && mx < S + 8 && my > -8 && my < S + 8) {
+        ctx.save(); ctx.translate(mx, my); ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = '#ffe066'; ctx.strokeStyle = '#342910'; ctx.lineWidth = 1.2;
+        ctx.fillRect(-3.5, -3.5, 7, 7); ctx.strokeRect(-3.5, -3.5, 7, 7);
+        ctx.restore();
+      }
+    }
+
     // player arrow
     ctx.save();
     ctx.translate(S / 2, S / 2);
@@ -378,15 +393,49 @@ export class UI {
     ctx.moveTo(cx - 4, 1); ctx.lineTo(cx + 4, 1); ctx.lineTo(cx, 7);
     ctx.closePath();
     ctx.fill();
+
+    const target = this.activeObjective && this.activeObjective.target;
+    if (target) {
+      const p = G.player.pos;
+      const tb = Math.atan2(target.x - p.x, -(target.z - p.z));
+      let rel = tb - heading;
+      rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+      if (Math.abs(rel) <= range) {
+        const x = cx + rel * pxPerRad;
+        ctx.save(); ctx.translate(x, H - 5); ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = '#ffe066'; ctx.fillRect(-3, -3, 6, 6); ctx.restore();
+      }
+    }
   }
 
-  // ---- objective hint (nearest dark beacon) ---------------------------------
+  // ---- active quest objective + navigation -----------------------------------
 
   updateObjective() {
     if (G.time - this.objT < 1) return; // refresh ~1s of game time
     this.objT = G.time;
     const el = this.el('objective');
     const p = G.player.pos;
+    const objective = getActiveObjective();
+    this.activeObjective = objective;
+    if (objective) {
+      let nav = '';
+      const target = objective.target;
+      if (target) {
+        const yaw = G.player.camYaw;
+        const heading = Math.atan2(Math.sin(yaw), -Math.cos(yaw));
+        const tb = Math.atan2(target.x - p.x, -(target.z - p.z));
+        let rel = Math.atan2(Math.sin(tb - heading), Math.cos(tb - heading));
+        const idx = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8;
+        const d = Math.hypot(target.x - p.x, target.z - p.z);
+        nav = `\n${target.label || objective.stageTitle} ${ARROWS[idx]} ${Math.round(d)}m`;
+      } else if (objective.progress) {
+        nav = `\n${objective.progress.current} / ${objective.progress.total} ${objective.progress.label}`;
+      }
+      const txt = objective.questTitle.toUpperCase() + nav;
+      el.title = objective.objective;
+      if (txt !== this.lastObj) { this.lastObj = txt; el.textContent = txt; }
+      return;
+    }
     let best = null, bd = Infinity;
     for (const s of G.shrines) {
       if (s.active) continue;
@@ -405,6 +454,7 @@ export class UI {
       const idx = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8;
       txt = 'Beacon ' + ARROWS[idx] + ' ' + Math.round(Math.sqrt(bd)) + 'm';
     }
+    el.title = txt;
     if (txt !== this.lastObj) { this.lastObj = txt; el.textContent = txt; }
   }
 
@@ -444,13 +494,25 @@ export class UI {
   // sequential NPC dialogue box; returns true while a conversation is open
   dialog(name, text, hasMore) {
     const d = this.el('dialog');
-    if (text === null) { d.classList.remove('show'); return; }
+    if (text === null) {
+      // A named caller may close only the conversation it owns. Passing an
+      // empty name is an intentional global clear for cinematics/death.
+      if (name && this.dialogSpeaker && name !== this.dialogSpeaker) return false;
+      d.classList.remove('show');
+      this.dialogSpeaker = null;
+      return true;
+    }
+    this.dialogSpeaker = name;
     this.el('dialog-name').textContent = name;
     this.el('dialog-text').textContent = text;
     this.el('dialog-more').textContent = hasMore ? 'E — CONTINUE' : 'E — FAREWELL';
     d.classList.add('show');
     clearTimeout(this.dialogTimer);
-    this.dialogTimer = setTimeout(() => d.classList.remove('show'), 14000);
+    this.dialogTimer = setTimeout(() => {
+      d.classList.remove('show');
+      if (this.dialogSpeaker === name) this.dialogSpeaker = null;
+    }, 14000);
+    return true;
   }
 
   banner(title, sub) {
@@ -594,6 +656,16 @@ export class UI {
     ctx.strokeStyle = '#202020'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
 
+    const questTarget = this.activeObjective && this.activeObjective.target;
+    if (questTarget) {
+      const x = mx(questTarget.x), y = my(questTarget.z);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = '#ffe066'; ctx.strokeStyle = '#342910'; ctx.lineWidth = 2;
+      ctx.fillRect(-6, -6, 12, 12); ctx.strokeRect(-6, -6, 12, 12); ctx.restore();
+      ctx.font = '600 12px Cinzel, Georgia'; ctx.fillStyle = '#ffe9b0';
+      ctx.textAlign = 'center'; ctx.fillText(questTarget.label || 'ACTIVE QUEST', x, y - 15);
+    }
+
     this.el('map-glim').textContent = '🍃 ' + G.glimmers + ' glimmers found';
     this.el('mapview').classList.add('show');
   }
@@ -664,13 +736,15 @@ export class UI {
     G.audio.sfx(this.invOpen ? 'ui_open' : 'ui_close');
     if (this.invOpen) {
       G.tut.hints.satchel = true;         // the Wayfarer's satchel lesson
-      this.invPrevPaused = G.paused;
-      G.paused = true;                    // browse in peace, TotK-style
+      setPauseReason('inventory', true);  // named ownership composes with map/manual pause
       if (document.pointerLockElement) document.exitPointerLock();
       this.renderPropIcons();
       this.refreshInventory();
     } else {
-      G.paused = this.invPrevPaused || false;
+      setPauseReason('inventory', false);
+      // Exiting pointer lock to open the satchel must not silently resume an
+      // uncontrollable game. A click on the canvas reacquires and clears this.
+      if (G.started && !document.pointerLockElement) setPauseReason('pointer', true);
       G.mouse.dx = 0; G.mouse.dy = 0;
     }
   }
@@ -694,7 +768,7 @@ export class UI {
           seen: G.orbs > 0, effect: 'Four orbs grant a blessing',
           desc: 'The gratitude of an awakened beacon, warm as a held breath.' },
         { key: 'glimmer', emoji: '🍃', name: 'GLIMMER', count: G.glimmers,
-          seen: G.glimmers > 0, effect: 'A friend found (' + G.glimmers + ' of 18)',
+          seen: G.glimmers > 0, effect: 'A friend found (' + G.glimmers + ' of ' + GLIMMER_TOTAL + ')',
           desc: 'A giggling forest spirit. It rides in your hood now and criticizes your climbing.' },
         { key: 'feather', model: 'feather', emoji: '🪶', name: 'SWIFT FEATHER', count: G.items.feather,
           seen: !!G.seen.feather, use: 'feather', effect: 'Use: sprint like the wind (30s)',
@@ -756,24 +830,37 @@ export class UI {
     }
     // adventure log: region + story progress instead of the slot grid
     if (this.invTab === 'log') {
-      const q = (G.tut.quests && G.tut.quests.tilla) || 0;
       const row = (name, val) =>
         `<div style="display:flex;justify-content:space-between;padding:7px 4px;` +
         `border-bottom:1px solid rgba(226,203,141,.15);font-family:Georgia;font-size:14px">` +
         `<span style="color:#cfc4a6">${name}</span><span style="color:#ffe066">${val}</span></div>`;
+      const quests = getQuestLog();
+      let questHtml = '<div style="margin-top:12px;font-size:11px;letter-spacing:2px;color:#9a8f74">QUESTS</div>';
+      for (const q of quests) {
+        const prog = q.progress ? ` · ${q.progress.current}/${q.progress.total}` : '';
+        questHtml += `<div data-quest-id="${q.id}" style="padding:9px 7px;margin-top:5px;border-radius:7px;cursor:${q.status === 'active' ? 'pointer' : 'default'};` +
+          `border:1px solid ${q.active ? 'rgba(255,224,102,.7)' : 'rgba(226,203,141,.18)'};` +
+          `background:${q.active ? 'rgba(255,224,102,.08)' : 'rgba(226,203,141,.035)'}">` +
+          `<div style="display:flex;justify-content:space-between;font-size:13px;color:${q.status === 'completed' ? '#9fffb0' : '#ffe066'}">` +
+          `<span>${q.kind === 'main' ? '◆ ' : '◇ '}${q.title}</span><span>${q.status === 'completed' ? 'COMPLETE' : q.active ? 'ACTIVE' : ''}</span></div>` +
+          `<div style="font:13px Georgia;color:#cfc4a6;margin-top:3px">${q.stageTitle}${prog}</div>` +
+          `<div style="font:12px Georgia;color:#8f8875;margin-top:2px;line-height:1.35">${q.objective}</div></div>`;
+      }
       this.invGrid.innerHTML =
-        '<div style="grid-column:1/-1">' +
+        '<div style="grid-column:1/-1;height:363px;overflow-y:auto;padding-right:5px">' +
         row('Beacons awakened', G.shrines.filter(s => s.active).length + ' / 8') +
         row('Skywatch towers charted', G.towers.filter(t => t.active).length + ' / 3') +
-        row('Forest glimmers found', G.glimmers + ' / 18') +
-        row('Spirit orbs held', G.orbs) +
-        row('Sky gems gathered', G.gems) +
-        row("Maren's lessons", G.tut.done ? 'complete' : 'in progress') +
-        row("Tilla's worry", q === 0 ? 'bring her 3 apples' : q === 1 ? 'touch the fallen sky-stone' : 'resolved — the works still stir') +
-        '</div>';
+        row('Glimmers found', G.glimmers + ' / ' + GLIMMER_TOTAL) +
+        questHtml + '</div>';
+      for (const node of this.invGrid.querySelectorAll('[data-quest-id]')) {
+        node.onclick = () => {
+          if (setActiveQuest(node.dataset.questId)) this.refreshInventory();
+        };
+      }
       this.invDetail.innerHTML =
-        '<div style="margin-top:120px;color:#9a8f74;font-family:Georgia;font-size:13px;line-height:1.6">' +
-        'The valley remembers what you do for it.<br>Wake the beacons. Chart the towers.<br>Mind the sleeping constructs.</div>';
+        '<div style="margin-top:95px;color:#9a8f74;font-family:Georgia;font-size:13px;line-height:1.65">' +
+        'Select an unfinished quest to track it.<br><br>The gold diamond appears on the compass, minimap, and charted map. ' +
+        'Some mysteries must still be followed by ear, weather, or memory.</div>';
       return;
     }
     // the Chronicle: every fragment of the valley's memory found so far
@@ -892,9 +979,12 @@ export class UI {
       // can't lob ballistically from a paused menu — close the satchel first,
       // then throw with the live camera (G.throwPod owns the count decrement)
       this.toggleInventory();
+      setPauseReason('pointer', false);
       if (G.throwPod) G.throwPod();
+      if (!document.pointerLockElement) setPauseReason('pointer', true);
       return; // toggleInventory already refreshed/closed the panel
     }
+    save();
     this.refreshInventory();
   }
 

@@ -24,6 +24,14 @@ const tmpS = V();
 const STREAK_N = 24;
 const DUST = 0xcbb586;   // sandy dust for landings / footfalls
 
+// Ground enemies store their position at their feet, while flying enemies
+// (notably razorkites) store it at their body. Keep one shared strike/arrow
+// centre so both weapons agree about what the player is actually aiming at.
+function enemyCenterY(e) {
+  const ground = heightAt(e.pos.x, e.pos.z);
+  return e.pos.y > ground + 2.2 ? e.pos.y : e.pos.y + 0.95;
+}
+
 // TotK-style character rim light: a pale sky-blue view-dependent fresnel
 // added into the toon material's outgoing light so the hero lifts softly
 // off the background. Patches only the surface shader — the depth material
@@ -86,6 +94,8 @@ export class Player {
     this.prevGlideYaw = 0;
     this.inUpdraft = false;  // edge detect for updraft sfx
     this.inGust = false;     // edge detect for living-gust surge sfx
+    this.stormGustActive = false; // edge detect for global storm-pulse shove
+    this.wetClimbWarned = false;  // one warning per wet spell, never per slip
     this.exhaustDropT = 0;   // sweat-drop cadence while exhausted
     this.gripDustT = 0;      // climbing grip dust cadence
     // held-prop rotate input (R tap = 90° snap, R hold = free rotate)
@@ -110,6 +120,15 @@ export class Player {
     this.arrows = 20;
     this.arrowPool = [];
     this.shootCd = 0;
+
+    // --- shield guard ---
+    // Q is read from the generic key map; no input-layer plumbing required.
+    this.guarding = false;
+    this.guardT = 0;
+    this.guardPerfectOpen = false;
+    this.guardRearmT = 0;
+    this.guardBreakT = 0;
+    this.guardFlashT = 0;
 
     this.bodyReady = false;  // no body shown until the rig loads or fails
     this.buildModel();
@@ -188,6 +207,21 @@ export class Player {
     shield.rotation.x = Math.PI / 2;
     shield.position.set(-0.08, 1.08, -0.34);
     this.torso.add(shield);
+    this.shield = shield;
+
+    // A restrained wind-ring makes the guard readable on both the procedural
+    // fallback and the rigged knight (whose authored round shield stays in
+    // the left hand). It brightens during the perfect-guard opening.
+    this.guardAura = new THREE.Mesh(
+      new THREE.RingGeometry(0.32, 0.5, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x8fc9ff, transparent: true, opacity: 0.22,
+        depthWrite: false, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      })
+    );
+    this.guardAura.position.set(0, 1.12, 0.62);
+    this.guardAura.visible = false;
 
     // glider canopy (hidden unless gliding)
     this.glider = new THREE.Group();
@@ -212,8 +246,10 @@ export class Player {
     this.cape.position.set(0, 1.44, -0.2);
     this.torso.add(this.cape);
 
-    g.add(this.torso, this.head, this.armL, this.armR, this.legL, this.legR, this.glider);
+    g.add(this.torso, this.head, this.armL, this.armR, this.legL, this.legR,
+      this.glider, this.guardAura);
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    this.guardAura.castShadow = false;
     this.group = g;
     G.scene.add(g);
 
@@ -336,8 +372,109 @@ export class Player {
     return !this.exhausted;
   }
 
-  damage(quarters, fromX, fromZ) {
+  updateGuard(dt, k) {
+    this.guardRearmT = Math.max(0, this.guardRearmT - dt);
+    this.guardBreakT = Math.max(0, this.guardBreakT - dt);
+    this.guardFlashT = Math.max(0, this.guardFlashT - dt);
+
+    const canGuard = !!k['KeyQ'] && this.mode === 'ground' && !this.held &&
+      this.attackT < 0 && !this.exhausted && this.guardBreakT <= 0;
+    if (canGuard) {
+      if (!this.guarding) {
+        this.guarding = true;
+        this.guardT = 0;
+        this.guardPerfectOpen = this.guardRearmT <= 0;
+        // Prevent rapid Q tapping from producing an uninterrupted parry wall.
+        this.guardRearmT = 0.42;
+      }
+      this.guardT += dt;
+      if (this.guardT > 0.16) this.guardPerfectOpen = false;
+
+      // A planted guard follows the lock target, or the camera when unlocked.
+      let targetYaw = this.camYaw;
+      if (this.lockTarget && !this.lockTarget.dead) {
+        targetYaw = Math.atan2(this.lockTarget.pos.x - this.pos.x,
+          this.lockTarget.pos.z - this.pos.z);
+      }
+      let d = targetYaw - this.yaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      this.yaw += clamp(d, -9 * dt, 9 * dt);
+    } else {
+      this.guarding = false;
+      this.guardT = 0;
+      this.guardPerfectOpen = false;
+    }
+  }
+
+  guardFaces(fromX, fromZ) {
+    if (fromX === undefined || fromZ === undefined) return false;
+    const dx = fromX - this.pos.x, dz = fromZ - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.001) return true;
+    return (dx / d) * Math.sin(this.yaw) + (dz / d) * Math.cos(this.yaw) > 0.12;
+  }
+
+  breakGuard() {
+    G.stamina = 0;
+    this.staminaUse = 0;
+    this.exhausted = true;
+    this.guarding = false;
+    this.guardPerfectOpen = false;
+    this.guardBreakT = 0.65;
+    this.guardFlashT = 0.28;
+    spawnSparkle(this.pos.x + Math.sin(this.yaw) * 0.65, this.pos.y + 1.05,
+      this.pos.z + Math.cos(this.yaw) * 0.65, 0xff9b62, 14, 4.2);
+    G.audio.sfx('exhaust');
+    G.camShake += 0.2;
+    G.ui.toast('Guard broken — catch your breath', 0xffb080);
+  }
+
+  guardHit(quarters, fromX, fromZ, perfectOnly = false) {
+    if (!this.guarding || !this.guardFaces(fromX, fromZ)) return false;
+    const perfect = this.guardPerfectOpen;
+    if (perfectOnly && !perfect) return false;
+
+    // Perfect timing redirects force instead of absorbing it. Ordinary
+    // blocks scale with incoming damage, so heavy clubs cannot be turtled
+    // forever behind the same stamina bar used by traversal.
+    const cost = perfect ? 6 : Math.min(30, 8 + quarters * 4);
+    if (G.stamina + 1e-4 < cost) {
+      this.breakGuard();
+      return false;
+    }
+    G.stamina = Math.max(0, G.stamina - cost);
+    this.staminaUse = 0;
+    this.guardPerfectOpen = false;
+    this.guardFlashT = perfect ? 0.3 : 0.18;
+
+    const fx = this.pos.x + Math.sin(this.yaw) * 0.72;
+    const fz = this.pos.z + Math.cos(this.yaw) * 0.72;
+    spawnSparkle(fx, this.pos.y + 1.12, fz,
+      perfect ? 0xc8fff0 : 0x9fcfff, perfect ? 20 : 10, perfect ? 5.5 : 3.2);
+    G.audio.sfx('block');
+    G.camShake += perfect ? 0.14 : 0.07;
+    this.fovKick += perfect ? 1.6 : 0.55;
+    if (perfect) G.ui.toast('Perfect guard!', 0xc8fff0);
+
+    // Spending the final sliver still earns the block, then drops the shield.
+    if (G.stamina <= 0.01) {
+      this.exhausted = true;
+      this.guarding = false;
+      this.guardBreakT = 0.45;
+    }
+    return true;
+  }
+
+  // Called by Hollow mage bolts before their ground impact. No other attack
+  // reflects: ordinary hits flow through damage() and use the normal block.
+  tryPerfectGuard(fromX, fromZ) {
+    return this.guardHit(3, fromX, fromZ, true);
+  }
+
+  damage(quarters, fromX, fromZ, bypassGuard = false) {
     if (this.iframes > 0 || G.gameOver) return;
+    if (!bypassGuard && this.guardHit(quarters, fromX, fromZ)) return;
     G.hearts -= quarters;
     this.iframes = 1.0;
     G.ui.hurtFlash();
@@ -374,6 +511,10 @@ export class Player {
     G.hearts = G.maxHearts;
     G.stamina = G.maxStamina;
     this.exhausted = false;
+    this.guarding = false;
+    this.guardPerfectOpen = false;
+    this.guardBreakT = 0;
+    this.guardRearmT = 0;
     this.mode = 'ground';
     G.gameOver = false;
     this.snapCameraNextFrame();
@@ -566,6 +707,12 @@ export class Player {
   tryShoot() {
     if (this.shootCd > 0 || !this.aiming) return;
     if (this.arrows <= 0) { G.ui.toast('Out of arrows...', 0xcccccc); return; }
+    // Air shots are deliberately possible, but each release spends a small
+    // amount of the same stamina keeping the hero aloft. Gravity never pauses.
+    if (this.mode !== 'ground' && !this.useStamina(5)) {
+      G.ui.toast('Too winded to loose an arrow', 0xaed8e8);
+      return;
+    }
     let arrow = null;
     for (const a of this.arrowPool) if (a.t < 0) { arrow = a; break; }
     if (!arrow) return;
@@ -621,7 +768,7 @@ export class Player {
       for (const e of G.enemies) {
         if (e.dead) continue;
         const dx = e.pos.x - g.position.x, dz = e.pos.z - g.position.z;
-        const dy = (e.pos.y + 1.1) - g.position.y;
+        const dy = enemyCenterY(e) - g.position.y;
         if (dx * dx + dz * dz + dy * dy < (e.radius + 0.5) * (e.radius + 0.5)) {
           e.hurt(a.lit ? 3 : 2, this.pos);
           spawnSparkle(g.position.x, g.position.y, g.position.z,
@@ -671,6 +818,7 @@ export class Player {
 
   tryAttack() {
     if (this.mode === 'climb' || this.mode === 'glide' || this.mode === 'mantle') return;
+    if (this.guarding) return;
     if (this.held) { this.throwHeld(); return; }  // attack while carrying = throw
     if (this.attackT >= 0 && this.attackT < 0.18) return;
     if (this.attackT >= 0) this.combo = (this.combo + 1) % 3;
@@ -706,7 +854,10 @@ export class Player {
       if (e.dead) continue;
       tmp2.set(e.pos.x - this.pos.x, 0, e.pos.z - this.pos.z);
       const d = tmp2.length();
-      if (d < reach + e.radius && tmp2.normalize().dot(fwd) > 0.35) {
+      const dy = Math.abs(enemyCenterY(e) - (this.pos.y + 1.0));
+      const verticalReach = 1.25 + Math.min(0.3, e.radius * 0.18);
+      if (dy <= verticalReach && d < reach + e.radius &&
+          tmp2.normalize().dot(fwd) > 0.35) {
         e.hurt(1 + (this.combo === 2 ? 1 : 0), this.pos);
         hits++;
       }
@@ -721,6 +872,7 @@ export class Player {
     this.iframes = Math.max(0, this.iframes - dt);
     this.climbCooldown = Math.max(0, this.climbCooldown - dt);
     this.staminaUse += dt;
+    if ((G.weather.wetness || 0) < 0.25) this.wetClimbWarned = false;
 
     // jump feel timers: coyote grace + input buffering
     this.coyoteT += dt;
@@ -742,7 +894,8 @@ export class Player {
     } else this.exhaustDropT = 0;
 
     // stamina regen (star shard vigor doubles it while the buff runs)
-    if (this.staminaUse > 0.65 && this.mode !== 'climb' && this.mode !== 'glide' && this.mode !== 'swim') {
+    if (this.staminaUse > 0.65 && this.mode !== 'climb' && this.mode !== 'glide' &&
+        this.mode !== 'swim' && !this.guarding) {
       const regen = G.time < G.buffs.vigorUntil ? 76 : 38;
       G.stamina = Math.min(G.maxStamina, G.stamina + regen * dt);
       if (this.exhausted && G.stamina > G.maxStamina * 0.32) this.exhausted = false;
@@ -770,10 +923,17 @@ export class Player {
     }
     if (this.lockTarget && (this.lockTarget.dead || this.lockTarget.pos.distanceTo(this.pos) > 32)) this.lockTarget = null;
 
-    // bow aim: hold RMB on solid ground — the hero turns quickly (never
+    // Guard wins input conflicts (Q + RMB), so raising the shield is always
+    // immediate even if the bow was drawn on the previous frame.
+    this.updateGuard(dt, k);
+
+    // bow aim: hold RMB on foot or aloft; the hero turns quickly (never
     // snaps: an instant yaw = camYaw read as a wild spin when the camera
     // faced the hero) and squares up behind the arrow
-    const wantAim = !!k._rmb && this.mode === 'ground' && !this.held && this.attackT < 0;
+    // Falling and gliding retain their real-time physics while aiming.
+    const aimMode = this.mode === 'ground' || this.mode === 'air' || this.mode === 'glide';
+    const wantAim = !!k._rmb && aimMode && !this.guarding && !k['KeyQ'] &&
+      !this.held && this.attackT < 0;
     if (wantAim && !this.aiming) this.aimT = 0;
     this.aiming = wantAim;
     if (this.aiming) {
@@ -808,6 +968,7 @@ export class Player {
     }
     if (this.mode !== 'air' && this.mode !== 'glide') this.inUpdraft = false;
     if (this.mode !== 'glide') this.inGust = false;
+    if (this.mode !== 'glide') this.stormGustActive = false;
 
     // attack timing (hit-stop briefly freezes the swing on contact)
     if (this.attackT >= 0) {
@@ -875,22 +1036,48 @@ export class Player {
     if (!this.inGust) { this.inGust = true; G.audio.sfx('updraft'); this.fovKick += 1.4; }
   }
 
+  // Storm pulses are global, authored by sky.js, and always telegraphed for
+  // ~1.1s before this value rises above zero. Steering remains active, so the
+  // shove can be ridden or corrected rather than becoming random punishment.
+  applyStormGust(dt) {
+    const pulse = G.weather.gustPulse || 0;
+    if (pulse <= 0.001) { this.stormGustActive = false; return; }
+    const dx = G.weather.gustDx || 1, dz = G.weather.gustDz || 0;
+    const cloth = G.equip.stormcloth ? 0.65 : 1;
+    const along = this.vel.x * dx + this.vel.z * dz;
+    const target = 16 * cloth;
+    if (along < target) {
+      const add = Math.min(target - along, 18 * pulse * cloth * dt);
+      this.vel.x += dx * add;
+      this.vel.z += dz * add;
+    }
+    this.vel.y -= 1.8 * pulse * cloth * dt;
+    if (!this.stormGustActive) {
+      this.stormGustActive = true;
+      G.audio.sfx('glide');
+      this.fovKick += 2.2;
+      spawnSparkle(this.pos.x, this.pos.y + 1.1, this.pos.z, 0xe4f5ff, 12, 4);
+    }
+  }
+
   updateGround(dt, mx, mz, inputLen, k) {
     const heavyHeld = this.held && this.held.userData.heavy;
-    const sprinting = k['ShiftLeft'] && inputLen > 0 && !this.exhausted && !this.held;
+    const sprinting = k['ShiftLeft'] && inputLen > 0 && !this.exhausted &&
+      !this.held && !this.guarding;
     const swift = G.time < G.buffs.swiftUntil; // feather-blessed stride
     // shuffle slowly while catching breath on a climb ledge
     let speed = (sprinting ? (swift ? 11.6 : 9.2) : 5.4) * (this.climbCooldown > 0 ? 0.15 : 1);
     if (this.exhausted) speed *= 0.6;       // weary legs
     if (heavyHeld) speed *= 0.55;           // heavy prop drag
     if (this.aiming) speed *= 0.42;         // drawn bow = careful steps
+    if (this.guarding) speed *= 0.34;        // shield planted, feet still adjustable
     this.sprinting = sprinting;
     if (sprinting) this.useStamina((swift ? 8 : 14) * dt);
 
     const accel = 40;
     this.vel.x = lerp(this.vel.x, mx * speed, Math.min(1, accel * dt / speed * 4));
     this.vel.z = lerp(this.vel.z, mz * speed, Math.min(1, accel * dt / speed * 4));
-    if (inputLen > 0 && !this.aiming) { // while aiming, the aim owns the yaw
+    if (inputLen > 0 && !this.aiming && !this.guarding) { // combat stances own yaw
       const targetYaw = Math.atan2(mx, mz);
       let d = targetYaw - this.yaw;
       while (d > Math.PI) d -= Math.PI * 2;
@@ -910,7 +1097,7 @@ export class Player {
     }
 
     // walk into a wall -> climb
-    if (inputLen > 0 && !this.held && this.climbCooldown <= 0) {
+    if (inputLen > 0 && !this.held && !this.guarding && this.climbCooldown <= 0) {
       const wall = this.probeWall();
       if (wall && !this.exhausted) {
         this.enterClimb(wall);
@@ -920,7 +1107,7 @@ export class Player {
 
     // jump (fresh press OR a press buffered just before landing)
     const wantJump = (k['Space'] && !k._spaceLatch) || this.jumpBufT < 0.15;
-    if (wantJump && !heavyHeld) {
+    if (wantJump && !heavyHeld && !this.guarding) {
       if (k['Space']) k._spaceLatch = true;  // never latch an already-released key
       this.jumpBufT = 99;
       this.vel.y = 8.4;
@@ -960,8 +1147,10 @@ export class Player {
   updateAir(dt, mx, mz, inputLen, k) {
     this.vel.y -= 24 * dt;
     this.applyUpdrafts(dt);
-    this.vel.x = lerp(this.vel.x, mx * 5.4, dt * 2.4);
-    this.vel.z = lerp(this.vel.z, mz * 5.4, dt * 2.4);
+    const airSpeed = this.aiming ? 3.8 : 5.4;
+    const airControl = this.aiming ? 1.5 : 2.4;
+    this.vel.x = lerp(this.vel.x, mx * airSpeed, dt * airControl);
+    this.vel.z = lerp(this.vel.z, mz * airSpeed, dt * airControl);
     this.pos.addScaledVector(this.vel, dt);
 
     // splash into deep water at the surface
@@ -1032,25 +1221,29 @@ export class Player {
   updateGlide(dt, mx, mz, inputLen, k) {
     // W = dive (fast, nose-down), S = flare (float, drains stamina ~2x)
     const iz = (k['KeyW'] ? 1 : 0) - (k['KeyS'] ? 1 : 0);
-    const dive = iz > 0, flare = iz < 0;
+    // Drawing braces against the canopy, temporarily replacing dive/flare.
+    const dive = !this.aiming && iz > 0, flare = !this.aiming && iz < 0;
     // stormcloth glider (golem-forged): the canopy sips stamina
     const cloth = G.equip.stormcloth ? 0.55 : 1;
-    if (!k['Space'] || this.exhausted || !this.useStamina((flare ? 13 : 6.5) * cloth * dt)) {
+    const drawDrain = this.aiming ? 3.5 : 0;
+    if (!k['Space'] || this.exhausted ||
+        !this.useStamina(((flare ? 13 : 6.5) + drawDrain) * cloth * dt)) {
       this.mode = 'air';
       this.glider.visible = false;
       return;
     }
     this.glideDive = dive;
     this.glidePitch = dive ? 0.55 : flare ? 0.04 : 0.28;
-    const sink = dive ? -7.5 : flare ? -1.2 : -2.6;
+    const sink = dive ? -7.5 : flare ? -1.2 : this.aiming ? -3.6 : -2.6;
     this.vel.y = Math.max(this.vel.y - 20 * dt, sink);
     this.applyUpdrafts(dt);
-    const gSpeed = dive ? 14 : flare ? 7.5 : 10.5;
-    const gAccel = dive ? 2.2 : 1.6;
+    const gSpeed = dive ? 14 : flare ? 7.5 : this.aiming ? 8.7 : 10.5;
+    const gAccel = dive ? 2.2 : this.aiming ? 1.1 : 1.6;
     this.vel.x = lerp(this.vel.x, mx * gSpeed, dt * gAccel);
     this.vel.z = lerp(this.vel.z, mz * gSpeed, dt * gAccel);
     this.applyGusts(dt); // after the lerps so the surge isn't bled back toward input speed
-    if (inputLen > 0) {
+    this.applyStormGust(dt); // global storm pulse, likewise applied after steering lerps
+    if (inputLen > 0 && !this.aiming) {
       const targetYaw = Math.atan2(this.vel.x, this.vel.z);
       let d = targetYaw - this.yaw;
       while (d > Math.PI) d -= Math.PI * 2;
@@ -1079,6 +1272,14 @@ export class Player {
     }
   }
 
+  warnWetClimb() {
+    if ((G.weather.wetness || 0) <= 0.45 || this.wetClimbWarned) return;
+    this.wetClimbWarned = true;
+    G.ui.toast(G.equip.barkgrip
+      ? 'Rain-slick stone — Barkgrip keeps a steadier hold'
+      : 'Rain-slick stone — climbing drains more stamina', 0xaed8e8);
+  }
+
   enterClimb(wall) {
     this.mode = 'climb';
     this.climbStartY = this.pos.y;
@@ -1086,6 +1287,7 @@ export class Player {
     this.climbNormal.copy(wall.normal);
     this.climbObject = wall.object || null;
     this.yaw = Math.atan2(-wall.normal.x, -wall.normal.z);
+    this.warnWetClimb();
     if (wall.point) {
       this.pos.x = wall.point.x + wall.normal.x * 0.42;
       this.pos.z = wall.point.z + wall.normal.z * 0.42;
@@ -1095,7 +1297,10 @@ export class Player {
   updateClimb(dt, ix, iz, k) {
     // barkgrip gauntlets (golem-forged): the cliffs ask less of you
     const grip = G.equip.barkgrip ? 0.6 : 1;
-    const drain = ((Math.abs(ix) + Math.abs(iz)) > 0 ? 7.5 : 2.5) * grip;
+    const wet = clamp(G.weather.wetness || 0, 0, 1);
+    this.warnWetClimb(); // rain can begin after the player is already on the wall
+    const wetPenalty = 1 + wet * (G.equip.barkgrip ? 0.25 : 0.75);
+    const drain = ((Math.abs(ix) + Math.abs(iz)) > 0 ? 7.5 : 2.5) * grip * wetPenalty;
     if (!this.useStamina(drain * dt)) {  // stamina gone -> fall
       this.mode = 'air';
       return;
@@ -1115,7 +1320,9 @@ export class Player {
 
     const n = this.climbNormal;
     const right = tmp1.set(-n.z, 0, n.x); // tangent
-    const climbSpeed = 2.3;
+    // Wet rock only slows upward progress; lateral/down inputs remain fully
+    // controllable, so retreating to a ledge is always available.
+    const climbSpeed = 2.3 * (iz > 0 ? 1 - wet * (G.equip.barkgrip ? 0.07 : 0.2) : 1);
     this.pos.addScaledVector(right, -ix * climbSpeed * dt);
     this.pos.y += iz * climbSpeed * dt;
     // ease toward the wall facing — terrain normals jitter frame to frame,
@@ -1353,6 +1560,7 @@ export class Player {
     let lean = 0, crouch = 0;
     if (this.mode === 'ground') {
       if (inputLen > 0 || speed > 0.5) lean = runT * 0.18;
+      if (this.guarding) lean = 0.08;
       if (this.exhausted) lean += 0.14 + Math.sin(t * 2.2) * 0.05; // weary slump
       if (this.landSquash > 0) {       // landing crouch squash
         crouch = this.landSquash;
@@ -1375,6 +1583,30 @@ export class Player {
     if (this.mode === 'glide') roll = this.bank;
     else if (this.exhausted && this.mode === 'ground') roll = Math.sin(t * 2.2) * 0.045;
     g.rotation.z = lerp(g.rotation.z, roll, Math.min(1, dt * 8));
+
+    // Raise the procedural shield and show the shared wind-ring. The ring is
+    // deliberately independent of the body mesh so the rigged knight gets
+    // the same timing/readability without changing hero-rig.js.
+    if (this.guarding) {
+      if (this.shield.parent !== this.armL) this.armL.add(this.shield);
+      this.shield.position.set(0, -0.38, 0.28);
+      this.shield.rotation.set(Math.PI / 2, 0, 0);
+    } else {
+      if (this.shield.parent !== this.torso) this.torso.add(this.shield);
+      this.shield.position.set(-0.08, 1.08, -0.34);
+      this.shield.rotation.set(Math.PI / 2, 0, 0);
+    }
+    const guardFx = this.guarding || this.guardFlashT > 0;
+    this.guardAura.visible = guardFx;
+    if (guardFx) {
+      const flash = clamp(this.guardFlashT / 0.3, 0, 1);
+      const broken = !this.guarding && this.guardBreakT > 0;
+      this.guardAura.material.color.setHex(broken ? 0xff8f62
+        : this.guardPerfectOpen ? 0xc8fff0 : flash > 0 ? 0xe8ffff : 0x8fc9ff);
+      this.guardAura.material.opacity = clamp(
+        (this.guarding ? 0.2 + Math.sin(t * 11) * 0.04 : 0) + flash * 0.55, 0, 0.78);
+      this.guardAura.scale.setScalar(1 + flash * 0.42);
+    }
 
     // drawn bow rides in front while aiming, pitching with the camera
     if (this.bowGrp) {
@@ -1441,6 +1673,11 @@ export class Player {
       legL = Math.sin(f) * 0.35; legR = -legL;
     }
 
+    if (this.guarding) {
+      armL = -1.28;
+      armR = -0.28;
+    }
+
     // attack overrides right arm
     if (this.attackT >= 0) {
       const p = this.attackT / 0.42;
@@ -1460,6 +1697,7 @@ export class Player {
     }
 
     this.armL.rotation.x = lerp(this.armL.rotation.x, armL, ease);
+    this.armL.rotation.z = lerp(this.armL.rotation.z, this.guarding ? -0.42 : 0, ease);
     if (this.attackT < 0) this.armR.rotation.x = lerp(this.armR.rotation.x, armR, ease);
     else this.armR.rotation.x = armR;
     this.legL.rotation.x = lerp(this.legL.rotation.x, legL, ease);

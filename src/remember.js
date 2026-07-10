@@ -10,7 +10,7 @@
 // Plus: glimmer-wisps that ride with the hero, and letterboxed title cards
 // the first time each named land is entered.
 import * as THREE from 'three';
-import { G, save } from './state.js';
+import { G, save, GLIMMER_TOTAL } from './state.js';
 import { heightAt, slopeAt, WATER_Y, toonMat } from './terrain.js';
 import { hash2, clamp, lerp, smoothstep } from './noise.js';
 import { makeGlow, spawnSparkle, markSeen } from './world.js';
@@ -490,7 +490,7 @@ const WISP_TOASTS = [
 ];
 
 function updateWisps(dt, night) {
-  const tier = G.glimmers >= 18 ? 3 : G.glimmers >= 12 ? 2 : G.glimmers >= 6 ? 1 : 0;
+  const tier = G.glimmers >= GLIMMER_TOTAL ? 3 : G.glimmers >= 12 ? 2 : G.glimmers >= 6 ? 1 : 0;
   if (wispTier === -1) wispTier = tier; // no fanfare for a loaded save
   else if (tier > wispTier) {
     G.ui.toast(WISP_TOASTS[tier - 1], 0x9fffb0, 4600);
@@ -588,7 +588,7 @@ const DEED_CHECKS = {
   beacons: () => G.shrines.length > 0 && G.shrines.every(s => s.active),
   towers: () => G.towers.length > 0 && G.towers.every(t => t.active),
   glimmers: () => G.glimmers >= 9,
-  glimmerAll: () => G.glimmers >= 18,
+  glimmerAll: () => G.glimmers >= GLIMMER_TOTAL,
   stones: () => STONES.every(s => G.lore[s.id]),
   gloam: () => GLOAMS.every(g => G.lore[g.id]),
   letters: () => !!G.lore.lettersLaid,

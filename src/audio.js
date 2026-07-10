@@ -410,7 +410,7 @@ export class AudioSys {
       if (p && night && !G.bloodNight && G.enemies) {
         let best = 1e9;
         for (const e of G.enemies) {
-          if (e.dead || !e.camp) continue; // living boglins carry their camp point
+          if (e.dead || !e.camp || e.campDoused) continue; // rain-silenced camps carry no ambient drum
           const dx = e.camp.x - p.x, dz = e.camp.y - p.z;
           const d2 = dx * dx + dz * dz;
           if (d2 < best) best = d2;
@@ -446,8 +446,9 @@ export class AudioSys {
     this.percW = move(this.percW, aggro > 0 && !G.bloodNight ? 1 : 0, dt * 1.2);
 
     // one shared beat clock serves both layers; combat quickens the pulse
-    const amb = this.drumProx * 0.55;
-    const cbt = this.percW * 0.95;
+    const rainQuiet = Math.min(1, Math.max(0, (G.weather && G.weather.campQuiet) || 0));
+    const amb = this.drumProx * 0.55; // doused camps were excluded by the probe
+    const cbt = this.percW * 0.95 * (1 - rainQuiet * 0.35); // combat cadence remains, but rain softens it
     const vol = Math.max(amb, cbt);
     if (vol <= 0.04 || G.settings.mute) return;
     const t = this.ctx.currentTime;

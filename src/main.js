@@ -1,7 +1,9 @@
 // Entry point: bootstraps renderer, world, player, systems, input, loop.
 import * as THREE from 'three';
-import { G, save, load, wipeSave } from './state.js';
-import { heightAt, inRiver, buildTerrain, buildWater, updateWater } from './terrain.js';
+import {
+  G, save, load, wipeSave, setPauseReason, hasPauseReason, clearPauseReasons,
+} from './state.js';
+import { heightAt, inRiver, buildTerrain, buildWater, updateWater, WORLD_R } from './terrain.js';
 import { buildSky, updateSky, isNight } from './sky.js';
 import {
   buildForests, buildRocks, buildGrass, updateGrass, buildGlimmers,
@@ -10,13 +12,15 @@ import {
   initSparkles, updateSparkles, spawnSparkle, spawnHealBloom,
   buildFlowers, buildRuins, buildBirds, updateBirds, buildFireflies, updateFireflies,
   buildIslands, updateIslands, buildWayfarer, updateWayfarer, buildGleaner,
-  buildAmbient, updateAmbient, updateGolems,
+  buildAmbient, updateAmbient, updateGolems, syncWorldProgress, settleCrate,
 } from './world.js';
 import { buildEnemies, updateEnemies, respawnFallen } from './enemies.js';
 import { buildAnimals, updateAnimals } from './animals.js';
 import { initTutorial, updateTutorial } from './tutorial.js';
 import { initOpening, updateOpening } from './opening.js';
 import { buildRemembering, updateRemembering, onRegionEnter } from './remember.js';
+import { buildQuests, updateQuests } from './quests.js';
+import { buildAdventure, updateAdventure } from './adventure.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -93,6 +97,7 @@ buildWayfarer();
 buildGleaner();
 buildRemembering();
 buildEnemies();
+buildAdventure();
 
 G.player = new Player();
 G.ui = new UI();
@@ -109,7 +114,9 @@ function applySave(s) {
   G.maxHearts = s.maxHearts; G.hearts = s.maxHearts;
   G.maxStamina = s.maxStamina; G.stamina = s.maxStamina;
   G.orbs = s.orbs; G.apples = s.apples; G.gems = s.gems; G.glimmers = s.glimmers;
-  G.respawn = s.respawn;
+  G.time = s.time; G.dayTime = s.dayTime; G.dayCount = s.dayCount;
+  G.lastCrimsonNight = s.lastCrimsonNight;
+  G.respawn = { ...s.respawn };
   s.shrines.forEach((a, i) => { if (a && G.shrines[i]) activateShrine(G.shrines[i], true); });
   s.towers.forEach((a, i) => {
     if (a && G.towers[i]) {
@@ -122,7 +129,7 @@ function applySave(s) {
       if (t.energyMats) for (const m of t.energyMats) { m.color.setHex(0x9feaff); m.emissive.setHex(0x54e8ff); }
     }
   });
-  G.respawn = s.respawn;
+  G.respawn = { ...s.respawn };
   if (s.items) Object.assign(G.items, s.items);
   if (s.seen) Object.assign(G.seen, s.seen);
   if (s.tut) Object.assign(G.tut, s.tut);
@@ -130,7 +137,12 @@ function applySave(s) {
   if (s.deeds) Object.assign(G.deeds, s.deeds);
   if (s.regionsSeen) Object.assign(G.regionsSeen, s.regionsSeen);
   if (s.equip) Object.assign(G.equip, s.equip);
+  if (s.quests) G.quests = s.quests;
+  if (s.story) G.story = s.story;
+  if (s.worldState) G.worldState = s.worldState;
+  if (s.settings) Object.assign(G.settings, s.settings);
   if (s.arrows !== undefined) G.player.arrows = s.arrows;
+  syncWorldProgress();
   G.player.pos.set(s.respawn.x, heightAt(s.respawn.x, s.respawn.z), s.respawn.z);
 }
 
@@ -143,6 +155,7 @@ window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
 
   if (!G.started && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space')) {
+    if (e.code === 'Space') keys._spaceLatch = true; // starting Space must not become a jump/skip
     startGame(!!(e.shiftKey && saved));
     return;
   }
@@ -155,18 +168,26 @@ window.addEventListener('keydown', (e) => {
   }
   switch (e.code) {
     case 'KeyM': toggleMap(); break;
-    case 'KeyI': G.ui.toggleInventory(); break;
-    case 'Escape': if (G.ui.invOpen) G.ui.toggleInventory(); break;
+    case 'KeyI':
+      if (mapOpen) toggleMap();
+      G.ui.toggleInventory();
+      break;
+    case 'Escape':
+      if (G.ui.invOpen) G.ui.toggleInventory();
+      else if (mapOpen) toggleMap();
+      break;
     case 'KeyN':
       G.settings.mute = !G.settings.mute;
       G.ui.toast(G.settings.mute ? 'Sound off' : 'Sound on', 0xcccccc);
       break;
     case 'KeyP':
-      if (!mapOpen) setPaused(!G.paused);
+      if (!mapOpen && !G.ui.invOpen) {
+        setPauseReason('manual', !hasPauseReason('manual'));
+      }
       break;
     case 'Tab': keys._lockPressed = true; break;
   }
-  if (G.paused || mapOpen) return; // gameplay inputs are inert while frozen
+  if (G.paused || mapOpen || G.ui.invOpen) return; // gameplay inputs are inert while frozen
   switch (e.code) {
     case 'KeyE': tryInteract(); break;
     case 'KeyF': G.player.tryGrab(); break;
@@ -186,7 +207,7 @@ window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; }
 
 canvas.addEventListener('click', (e) => {
   if (!G.started) { startGame(!!(e.shiftKey && saved)); return; } // clicking the title starts too
-  if (mapOpen) return;                          // map is keyboard-driven
+  if (mapOpen || G.ui.invOpen) return;          // overlays own the pointer
   if (document.pointerLockElement !== canvas) {
     lockPointer();
   } else if (!G.paused) {
@@ -213,55 +234,51 @@ function lockPointer() {
 
 // ---- pause panel & full map ------------------------------------------------
 
-let mapOpen = false;        // full-map overlay open (force-pauses the sim)
-let mapPrevPaused = false;  // user-pause state to restore when the map closes
-let pausedByLock = false;   // pause came from losing pointer lock
+let mapOpen = false;        // full-map overlay open (owns the 'map' pause reason)
 
 function refreshPausedHint() {
   document.getElementById('paused-hint').style.display =
-    (G.started && document.pointerLockElement !== canvas && !G.paused && !mapOpen)
+    (G.started && document.pointerLockElement !== canvas && !G.paused &&
+      !mapOpen && !(G.ui && G.ui.invOpen))
       ? 'block' : 'none';
 }
 
-// Pause still just flips G.paused — the sim freeze in tick() is unchanged.
-function setPaused(v, fromLock = false) {
-  if (G.paused === v) return;
-  G.paused = v;
-  pausedByLock = v && fromLock;
-  if (v) {
-    G.ui.showPause();
-  } else {
-    G.ui.hidePause();
-    G.mouse.dx = 0; G.mouse.dy = 0; // no camera snap from deltas gathered while frozen
-  }
+function syncPausePresentation() {
+  if (!G.ui) return;
+  const overlay = mapOpen || G.ui.invOpen;
+  const panel = !overlay && (hasPauseReason('manual') || hasPauseReason('pointer'));
+  if (panel) G.ui.showPause(); else G.ui.hidePause();
+  if (!G.paused) { G.mouse.dx = 0; G.mouse.dy = 0; }
   refreshPausedHint();
 }
 
 function toggleMap() {
   if (!G.started || G.gameOver) return;
+  if (!mapOpen && G.ui.invOpen) {
+    G.ui.toggleInventory();
+    setPauseReason('pointer', false); // the map takes ownership during the handoff
+  }
   mapOpen = !mapOpen;
   if (mapOpen) {
-    mapPrevPaused = G.paused;   // force-pause; separate from user-pause
-    G.paused = true;
-    G.ui.hidePause();
+    setPauseReason('map', true);
     G.ui.showMap();
   } else {
     G.ui.hideMap();
-    G.paused = mapPrevPaused;   // restore prior pause state
-    if (G.paused) G.ui.showPause();
-    else { G.mouse.dx = 0; G.mouse.dy = 0; }
+    setPauseReason('map', false);
+    if (!document.pointerLockElement) setPauseReason('pointer', true);
   }
-  refreshPausedHint();
+  syncPausePresentation();
 }
+
+G.onPauseChanged = syncPausePresentation;
 
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === canvas;
-  if (!locked && G.started && !G.gameOver && !mapOpen && !G.paused) {
-    setPaused(true, true);      // losing the pointer opens the pause panel
-  } else if (locked && pausedByLock && !mapOpen) {
-    setPaused(false);           // clicking back in resumes an auto-pause
+  if (locked) setPauseReason('pointer', false);
+  else if (G.started && !G.gameOver && !mapOpen && !(G.ui && G.ui.invOpen)) {
+    setPauseReason('pointer', true);
   }
-  refreshPausedHint();
+  syncPausePresentation();
 });
 window.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement === canvas) {
@@ -272,6 +289,7 @@ window.addEventListener('mousemove', (e) => {
 
 function startGame(continueSaved) {
   if (G.started) return;
+  clearPauseReasons();
   const usingSave = !!(continueSaved && saved);
   if (usingSave) {
     applySave(saved);
@@ -280,6 +298,7 @@ function startGame(continueSaved) {
     saved = null;
     document.getElementById('continue-hint').style.display = 'none';
   }
+  buildQuests();
   G.player.snapCameraNextFrame();
   G.started = true;
   document.getElementById('title').classList.add('hide');
@@ -333,14 +352,22 @@ function updateRegion() {
 }
 
 function updateBloodMoon() {
-  const night = isNight();
-  const due = (G.dayCount || 0) % 3 === 2;
-  if (night && due && !G.bloodNight) {
+  // One logical night straddles the dayTime wrap. Before midnight its ID is
+  // dayCount; after midnight it remains the previous dayCount, preventing the
+  // old dawn-clear/dusk-retrigger double crimson moon.
+  const nightId = G.dayTime > 0.79 ? G.dayCount
+    : G.dayTime < 0.21 ? G.dayCount - 1 : null;
+  const due = nightId !== null && ((nightId % 3) + 3) % 3 === 2;
+  if (due) {
     G.bloodNight = true;
-    const n = respawnFallen();
-    G.ui.banner('THE CRIMSON MOON', 'The fallen stir beneath a bleeding sky');
-    if (n > 0) G.audio.sfx('die');
-  } else if (!night && G.bloodNight) {
+    if (G.lastCrimsonNight !== nightId) {
+      G.lastCrimsonNight = nightId;
+      const n = respawnFallen();
+      G.ui.banner('THE CRIMSON MOON', 'The fallen stir beneath a bleeding sky');
+      if (n > 0) G.audio.sfx('die');
+      save();
+    }
+  } else if (G.bloodNight) {
     G.bloodNight = false;
     G.ui.toast('The crimson moon wanes. The valley breathes again.', 0xffb6a3, 3600);
   }
@@ -365,6 +392,7 @@ function eatApple() {
   G.audio.sfx('eat');
   spawnHealBloom(p2().x, p2().y, p2().z);
   G.ui.toast('Delicious! +1 heart', 0xffb6a3);
+  save();
 }
 const p2 = () => G.player.pos;
 
@@ -390,6 +418,34 @@ function updatePrompt() {
   G.ui.prompt(label);
 }
 
+let lastBoundaryRescue = -999;
+function recoverOutOfWorld() {
+  const P = G.player;
+  const p = P.pos;
+  const d = Math.hypot(p.x, p.z);
+  if (Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z) &&
+      d <= WORLD_R + 25 && p.y > -80) return;
+  const r = G.respawn;
+  const ry = heightAt(r.x, r.z);
+  if (P.held) {
+    const held = P.held;
+    P.held = null;
+    held.position.set(r.x + 2, ry + 2, r.z + 2);
+    settleCrate(held);
+  }
+  p.set(r.x, ry + 0.5, r.z);
+  P.vel.set(0, 0, 0);
+  P.mode = 'ground';
+  P.exhausted = false;
+  G.stamina = Math.max(G.stamina, G.maxStamina * 0.4);
+  if (P.glider) P.glider.visible = false;
+  P.snapCameraNextFrame();
+  if (G.time - lastBoundaryRescue > 2) {
+    lastBoundaryRescue = G.time;
+    G.ui.toast('The boundary wind carries you back to the last beacon.', 0xbfe8ff, 4200);
+  }
+}
+
 // ---- loop -------------------------------------------------------------------------
 
 let last = performance.now();
@@ -412,6 +468,7 @@ function step(dt, now) {
   if (G.started && !G.gameOver) {
     G.time += dt;
     G.player.update(dt);
+    recoverOutOfWorld();
   }
 
   updateSky(G.started ? dt : dt * 0.15);
@@ -436,6 +493,8 @@ function step(dt, now) {
     // frozen while dead: no deed kindles, letter catches, or one-shot
     // gloamings should play out over the game-over screen
     if (!G.gameOver) updateRemembering(dt, isNight());
+    if (!G.gameOver) updateAdventure(dt, isNight());
+    if (!G.gameOver) updateQuests(dt);
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();
     if (frame % 3 === 0) updatePrompt();
@@ -467,6 +526,7 @@ requestAnimationFrame(tick);
 
 // debug hooks for automated testing: run n synchronous simulation steps
 window.__game = G;
+window.__clearPause = () => { clearPauseReasons(); syncPausePresentation(); };
 G.renderFrame = renderFrame; // lets headless capture render a freecam frame with full post FX
 window.__step = (dt = 1 / 60, n = 1) => {
   for (let i = 0; i < n; i++) {

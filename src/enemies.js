@@ -173,6 +173,7 @@ function initPools() {
     bolts.push({
       mesh, ring, active: false, phase: 0,
       x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0, T: 1,
+      reflected: false, owner: null,
     });
   }
 }
@@ -181,6 +182,10 @@ function acquireBolt() {
   for (let i = 0; i < bolts.length; i++) if (!bolts[i].active) {
     const b = bolts[i];
     b.active = true; b.phase = 0; b.t = 0;
+    b.reflected = false; b.owner = null;
+    b.mesh.material.color.setHex(0x63ffa4);
+    if (b.mesh.children[0] && b.mesh.children[0].material.color)
+      b.mesh.children[0].material.color.setHex(0x39ff88);
     return b;
   }
   return null;
@@ -188,8 +193,40 @@ function acquireBolt() {
 
 function freeBolt(b) {
   b.active = false;
+  b.reflected = false;
+  b.owner = null;
   b.mesh.visible = false;
   b.ring.visible = false;
+}
+
+function combatCenterY(e) {
+  const ground = heightAt(e.pos.x, e.pos.z);
+  return e.pos.y > ground + 2.2 ? e.pos.y : e.pos.y + 0.95;
+}
+
+function reflectBolt(b) {
+  b.reflected = true;
+  b.t = 0;
+  b.ring.visible = false; // the old player-impact marker is no longer truthful
+  b.mesh.material.color.setHex(0xc8fff0);
+  if (b.mesh.children[0] && b.mesh.children[0].material.color)
+    b.mesh.children[0].material.color.setHex(0xb8ffe8);
+
+  const target = b.owner && !b.owner.dead ? b.owner : null;
+  if (target) {
+    const tx = target.pos.x, ty = combatCenterY(target), tz = target.pos.z;
+    const T = clamp(Math.hypot(tx - b.x, ty - b.y, tz - b.z) / 22, 0.25, 1.6);
+    b.T = T;
+    b.vx = (tx - b.x) / T;
+    b.vz = (tz - b.z) / T;
+    b.vy = (ty - b.y) / T + 0.5 * BOLT_G * T;
+  } else {
+    b.T = 1.2;
+    b.vx *= -1.25;
+    b.vz *= -1.25;
+    b.vy = Math.max(3, -b.vy * 0.6);
+  }
+  spawnSparkle(b.x, b.y, b.z, 0xc8fff0, 18, 5);
 }
 
 function updateBolts(dt) {
@@ -202,14 +239,56 @@ function updateBolts(dt) {
       b.vy -= BOLT_G * dt;
       b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
       b.mesh.position.set(b.x, b.y, b.z);
+      const sourceX = b.owner && !b.owner.dead ? b.owner.pos.x : b.x - b.vx;
+      const sourceZ = b.owner && !b.owner.dead ? b.owner.pos.z : b.z - b.vz;
+
+      // A fresh frontal guard catches the spell before its ground burst and
+      // redirects it toward the caster. Regular guarding is handled by the
+      // eventual damage() call and absorbs rather than reflects.
+      if (!b.reflected &&
+          Math.hypot(p.x - b.x, (p.y + 1.0) - b.y, p.z - b.z) < 1.3 &&
+          G.player.tryPerfectGuard && G.player.tryPerfectGuard(sourceX, sourceZ)) {
+        reflectBolt(b);
+        continue;
+      }
+
+      if (b.reflected) {
+        let hit = false;
+        for (const e of G.enemies) {
+          if (e.dead) continue;
+          const dx = e.pos.x - b.x, dz = e.pos.z - b.z;
+          const dy = combatCenterY(e) - b.y;
+          const r = e.radius + 0.45;
+          if (dx * dx + dy * dy + dz * dz < r * r) {
+            e.hurt(4, p);
+            spawnSparkle(b.x, b.y, b.z, 0xc8fff0, 24, 6);
+            G.camShake += 0.18;
+            freeBolt(b);
+            hit = true;
+            break;
+          }
+        }
+        if (hit) continue;
+      }
       // impact marker fades in and pulses while the bolt is airborne
       const k = clamp(b.t / b.T, 0, 1);
       b.ring.scale.setScalar(0.55 + k * 0.85);
       b.ring.material.opacity = (0.2 + k * 0.45) * (0.75 + Math.sin(G.time * 14) * 0.25);
       if (b.t >= b.T || b.y < heightAt(b.x, b.z) + 0.12) {
         const gy = heightAt(b.x, b.z);
-        if (Math.hypot(p.x - b.x, p.z - b.z) < 1.4 && Math.abs(p.y - gy) < 2.5) {
-          G.player.damage(3, b.x, b.z);
+        if (!b.reflected && Math.hypot(p.x - b.x, p.z - b.z) < 1.4 &&
+            Math.abs(p.y - gy) < 2.5) {
+          // Large deterministic test steps can skip the near-body check;
+          // preserve the perfect-guard contract at the impact boundary too.
+          if (G.player.tryPerfectGuard && G.player.tryPerfectGuard(sourceX, sourceZ)) {
+            b.x = p.x + Math.sin(G.player.yaw) * 0.72;
+            b.y = p.y + 1.12;
+            b.z = p.z + Math.cos(G.player.yaw) * 0.72;
+            b.mesh.position.set(b.x, b.y, b.z);
+            reflectBolt(b);
+            continue;
+          }
+          G.player.damage(3, sourceX, sourceZ);
         }
         spawnSparkle(b.x, gy + 0.4, b.z, 0x63ffa4, 16, 4);
         G.audio.sfx('thud');
@@ -316,7 +395,7 @@ function freeDisc(d) {
 // (one draw call per part across ALL camps). At night the fire lights and a
 // single shared PointLight is granted to the camp nearest the player
 // (distance-gated like the shrine lights, but cheaper — one light total).
-const campProps = []; // { x, z, y, flame, glow }
+const campProps = []; // { x, z, y, flame, glow, lit, doused, wetT, dryT }
 let campLight = null;
 const campSmoke = []; // pooled rising smoke puffs, granted to the nearest lit fire
 
@@ -388,7 +467,10 @@ function buildCamps() {
     glow.position.set(cx, ch + 1.2, cz);
     glow.visible = false;
     G.scene.add(flame, glow);
-    campProps.push({ x: cx, z: cz, y: ch, flame, glow, lit: false }); // lit: kindled by a burning arrow, persists past dawn
+    campProps.push({
+      x: cx, z: cz, y: ch, flame, glow,
+      lit: false, doused: false, wetT: 0, dryT: 0, saidDouse: false,
+    }); // lit: kindled by an arrow; sustained rain can douse it
   }
   G.scene.add(trunkIM, headIM, topIM, wingIM, stoneIM, logIM);
 
@@ -405,15 +487,57 @@ function buildCamps() {
 // is this camp's fire burning right now? (kindled flag, or the ambient
 // night-lighting within earshot of the player)
 function fireBurning(c, distToPlayer) {
+  if (c.doused) return false;
   return c.lit || (nightNow && distToPlayer < 120);
 }
 
-function updateCamps() {
+function campFireAt(x, z) {
+  for (let i = 0; i < campProps.length; i++) {
+    const c = campProps[i];
+    if (Math.abs(c.x - x) < 0.01 && Math.abs(c.z - z) < 0.01) return c;
+  }
+  return null;
+}
+
+function updateCamps(dt) {
   const p = G.player.pos;
+  const wet = clamp(G.weather.wetness || 0, 0, 1);
+  const soaking = wet > 0.55;
   let best = -1, bestD = 1e9; // nearest BURNING fire (owns the light + smoke)
   for (let i = 0; i < campProps.length; i++) {
     const c = campProps[i];
     const d = Math.hypot(p.x - c.x, p.z - c.z);
+    const wasBurning = fireBurning(c, d);
+    if (soaking) {
+      c.wetT += dt;
+      c.dryT = 0;
+    } else {
+      c.wetT = Math.max(0, c.wetT - dt * 1.5);
+      if (c.doused && wet < 0.3) c.dryT += dt;
+      else c.dryT = 0;
+    }
+    // Five continuous seconds of real rain, not a crossfade drizzle, so a
+    // player reaching a camp as rain begins still has time to use its flame.
+    if (!c.doused && c.wetT >= 5) {
+      c.doused = true;
+      c.lit = false;
+      c.dryT = 0;
+      if (wasBurning && d < 80) {
+        spawnSparkle(c.x, c.y + 0.8, c.z, 0x9fb7c8, 16, 2.8);
+        G.audio.sfx('splash');
+      }
+      if (wasBurning && d < 45 && !c.saidDouse) {
+        c.saidDouse = true;
+        G.ui.toast('The rain doused the boglin fire', 0xaed8e8);
+      }
+    } else if (c.doused && c.dryT >= 10) {
+      // Dry wood can resume its ambient night flame; player-kindled daytime
+      // fires still need another burning arrow because c.lit was cleared.
+      c.doused = false;
+      c.wetT = 0;
+      c.dryT = 0;
+      c.saidDouse = false;
+    }
     const lit = fireBurning(c, d);
     if (lit && d < bestD) { bestD = d; best = i; }
     c.flame.visible = lit;
@@ -477,11 +601,16 @@ export function igniteFireNear(x, y, z, r) {
   const p = G.player.pos;
   let caught = false;
   for (const c of campProps) {
-    if (c.lit || (nightNow && Math.hypot(p.x - c.x, p.z - c.z) < 120)) continue;
+    if (c.lit || (!c.doused && nightNow && Math.hypot(p.x - c.x, p.z - c.z) < 120)) continue;
+    if (c.doused && (G.weather.wetness || 0) > 0.45) continue;
     if (Math.abs(y - (c.y + 0.75)) > 2.2) continue;
     const dx = x - c.x, dz = z - c.z;
     if (dx * dx + dz * dz < r * r) {
       c.lit = true;
+      c.doused = false;
+      c.wetT = 0;
+      c.dryT = 0;
+      c.saidDouse = false;
       caught = true;
       spawnSparkle(c.x, c.y + 1.0, c.z, 0xffa03c, 22, 3.2);
       G.audio.sfx('windup');
@@ -776,6 +905,8 @@ class Boglin {
   constructor(x, z, variant, campX, campZ) {
     this.home = new THREE.Vector2(x, z);
     this.camp = new THREE.Vector2(campX, campZ);
+    this.campFire = campFireAt(campX, campZ);
+    this.campDoused = false; // audio.js and aggro both read this shared fact
     this.pos = new THREE.Vector3(x, heightAt(x, z), z);
     this.yaw = hash2(x | 0, z | 0) * Math.PI * 2;
     this.tough = variant === 'tough';   // indigo bruiser: leap slam
@@ -1267,7 +1398,12 @@ class Boglin {
     this.staggerT = Math.max(0, this.staggerT - dt);
     this.stateT += dt;
 
-    const aggroR = nightNow ? 30 : 22; // boglins are bolder in the dark
+    this.campDoused = !!(this.campFire && this.campFire.doused);
+    // Without firelight and drums, hard rain masks the camp's senses. Existing
+    // fights continue; only acquisition range shrinks, so weather never erases
+    // an enemy that already committed to the player.
+    const rainQuiet = nightNow && this.campDoused ? 1 : 0;
+    const aggroR = (nightNow ? 30 : 22) * (1 - rainQuiet * 0.35);
     const speedBase = this.tough ? 5.0 : 4.4;
     const pl = G.player;
     const s = this.state;
@@ -1281,7 +1417,7 @@ class Boglin {
       if (this.stateT > 2.5) {
         this.stateT = 0;
         const a = Math.random() * Math.PI * 2;
-        if (nightNow) { // gather around the camp fire after dark
+        if (nightNow && !this.campDoused) { // gather only around a living fire
           this.wanderTarget.set(this.camp.x + Math.cos(a) * (1.8 + Math.random() * 2),
             this.camp.y + Math.sin(a) * (1.8 + Math.random() * 2));
         } else {
@@ -1373,8 +1509,9 @@ class Boglin {
         this.attackHitDone = true;
         tmp2.set(p.x - this.pos.x, 0, p.z - this.pos.z);
         const d = tmp2.length();
+        const vertical = Math.abs(p.y - this.pos.y);
         const facing = d > 0.001 ? (tmp2.x / d) * Math.sin(this.yaw) + (tmp2.z / d) * Math.cos(this.yaw) : 1;
-        if (d < 2.8 && facing > 0.1) {
+        if (d < 2.8 && vertical < 1.45 && facing > 0.1) {
           if (G.player.iframes <= 0) G.hitStopT = Math.max(G.hitStopT, 0.09); // melee connects both ways
           G.player.damage(this.tough ? 4 : 2, this.pos.x, this.pos.z);
           G.camShake += 0.15;
@@ -1483,7 +1620,7 @@ class Boglin {
     const d = Math.hypot(p.x - this.leapTx, p.z - this.leapTz);
     spawnRing(this.leapTx, this.leapTy + 0.12, this.leapTz);
     spawnSparkle(this.leapTx, this.leapTy + 0.4, this.leapTz, 0xb9a888, 20, 5);
-    if (d < 3 && Math.abs(p.y - this.leapTy) < 3) {
+    if (d < 3 && Math.abs(p.y - this.leapTy) < 2.1) {
       if (G.player.iframes <= 0) G.hitStopT = Math.max(G.hitStopT, 0.09);
       G.player.damage(4, this.leapTx, this.leapTz);
     }
@@ -2191,6 +2328,8 @@ class Hollow {
     const tx = p.x, tz = p.z, ty = heightAt(tx, tz);
     const T = clamp(Math.hypot(tx - sx, tz - sz) / 14, 0.3, 1.6);
     b.x = sx; b.y = sy; b.z = sz; b.T = T;
+    b.owner = this;
+    b.reflected = false;
     b.vx = (tx - sx) / T;
     b.vz = (tz - sz) / T;
     b.vy = (ty - sy) / T + 0.5 * BOLT_G * T;
@@ -2337,9 +2476,10 @@ class Hollow {
         G.audio.sfx(this.kind === 'warrior' ? 'clubswing' : 'swing');
         tmp2.set(p.x - this.pos.x, 0, p.z - this.pos.z);
         const d = tmp2.length();
+        const vertical = Math.abs(p.y - this.pos.y);
         const facing = d > 0.001
           ? (tmp2.x / d) * Math.sin(this.yaw) + (tmp2.z / d) * Math.cos(this.yaw) : 1;
-        if (d < this.range + 0.6 && facing > 0.1) {
+        if (d < this.range + 0.6 && vertical < 1.45 && facing > 0.1) {
           if (G.player.iframes <= 0) G.hitStopT = Math.max(G.hitStopT, 0.09); // melee connects both ways
           G.player.damage(this.dmg, this.pos.x, this.pos.z);
           G.camShake += this.kind === 'warrior' ? 0.22 : 0.12;
@@ -2520,7 +2660,7 @@ export function updateEnemies(dt) {
   updateRocks(dt);
   updateBolts(dt);
   updateRings(dt);
-  updateCamps();
+  updateCamps(dt);
 }
 
 // the crimson moon calls the fallen back to their camps — boglins reappear

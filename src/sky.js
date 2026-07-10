@@ -10,7 +10,8 @@
 // sky.js is the only WRITER of G.weather = { kind, windMul, wetness }.
 import * as THREE from 'three';
 import { G } from './state.js';
-import { makeGlow } from './world.js';
+import { makeGlow, spawnSparkle } from './world.js';
+import { heightAt, slopeAt, WATER_Y } from './terrain.js';
 import { hash2, lerp, clamp, smoothstep } from './noise.js';
 
 const DAY_LENGTH = 600; // seconds for a full cycle
@@ -124,6 +125,14 @@ const wPrev = Object.assign({}, WEATHER_PARAMS.clear);  // params fading from
 const wCur = Object.assign({}, WEATHER_PARAMS.clear);   // blended params, per frame
 let wBlend = 1;                                         // 0..1 crossfade progress
 let wDwell = 70 + Math.random() * 110;                  // seconds until next roll
+let rainSustain = 0;                                    // seconds above real-rain threshold
+
+const STORM_GUST_WARN = 1.1;
+const STORM_GUST_DUR = 0.8;
+let stormGustPhase = 0; // 0 waiting, 1 telegraph, 2 pulse
+let stormGustT = 0;
+let stormGustTimer = 6;
+let stormGustAngle = 0;
 
 function pickNextWeather() {
   const table = WEATHER_NEXT[wKind];
@@ -166,6 +175,61 @@ function updateWeather(dt) {
   G.weather.windMul = wCur.windMul;
   G.weather.wetness = wCur.wetness;
   G.weather.grim = wCur.grim; // post.js reads this to fade the god rays
+  if (wCur.wetness > 0.55) rainSustain += dt;
+  else rainSustain = Math.max(0, rainSustain - dt * 1.5);
+  G.weather.rainTime = rainSustain;
+  G.weather.campQuiet = clamp((rainSustain - 3) / 3, 0, 1) *
+    clamp((wCur.wetness - 0.35) / 0.65, 0, 1);
+}
+
+function updateStormGust(dt) {
+  G.weather.gustTelegraph = 0;
+  G.weather.gustPulse = 0;
+  G.weather.gustDx = Math.cos(stormGustAngle);
+  G.weather.gustDz = Math.sin(stormGustAngle);
+
+  const activeStorm = wKind === 'storm' && wBlend > 0.6 && !G.bloodNight && G.started;
+  if (!activeStorm) {
+    stormGustPhase = 0;
+    stormGustT = 0;
+    stormGustTimer = Math.max(stormGustTimer, 4);
+    return;
+  }
+
+  if (stormGustPhase === 0) {
+    stormGustTimer -= dt;
+    if (stormGustTimer <= 0 && lightningState === 0) {
+      stormGustPhase = 1;
+      stormGustT = STORM_GUST_WARN;
+      stormGustAngle = hash2((G.time * 10) | 0, G.dayCount || 0, 913) * Math.PI * 2;
+      G.weather.gustDx = Math.cos(stormGustAngle);
+      G.weather.gustDz = Math.sin(stormGustAngle);
+      // Flush ambient slots so every replacement line points down the warned
+      // direction instead of leaving contradictory old wind trails onscreen.
+      for (let i = STREAK_UP; i < STREAK_N; i++)
+        streakData[i * STREAK_STRIDE + 5] = 0;
+      if (G.audio) G.audio.sfx('windup');
+      if (G.ui && G.player && G.player.mode === 'glide')
+        G.ui.toast('A storm gust is building — steer into it', 0xd8f3ff);
+    }
+  } else if (stormGustPhase === 1) {
+    stormGustT -= dt;
+    G.weather.gustTelegraph = clamp(1 - stormGustT / STORM_GUST_WARN, 0, 1);
+    if (stormGustT <= 0) {
+      stormGustPhase = 2;
+      stormGustT = STORM_GUST_DUR;
+      if (G.audio) G.audio.sfx('updraft');
+    }
+  } else {
+    stormGustT -= dt;
+    const p = clamp(1 - stormGustT / STORM_GUST_DUR, 0, 1);
+    G.weather.gustPulse = Math.sin(p * Math.PI);
+    if (stormGustT <= 0) {
+      stormGustPhase = 0;
+      stormGustTimer = 7 + hash2((G.time * 7) | 0, 411) * 6;
+      G.weather.gustPulse = 0;
+    }
+  }
 }
 
 // desaturate + slightly darken a color in place (weather greying)
@@ -179,9 +243,76 @@ function greyLerp(c, k) {
 
 // ---- lightning ----------------------------------------------------------------
 const FLASH_DUR = 0.09; // seconds — a 2-frame-ish spike
+const LIGHTNING_WARN = 1.1;
+const LIGHTNING_AFTER = 0.24;
 let boltTimer = 9;
 let flashT = 0;
 let thunderT = -1; // pending thunder delay; -1 = none
+let lightningState = 0; // 0 waiting, 1 warned target, 2 impact afterglow
+let lightningT = 0;
+let strikeX = 0, strikeY = 0, strikeZ = 0;
+let lightningRing = null, lightningPillar = null, lightningGlow = null;
+
+function buildLightningMarker() {
+  lightningRing = new THREE.Mesh(
+    new THREE.RingGeometry(1.55, 2.05, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0xbfe8ff, transparent: true, opacity: 0,
+      depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    })
+  );
+  lightningRing.rotation.x = -Math.PI / 2;
+  lightningPillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.14, 1, 6),
+    new THREE.MeshBasicMaterial({
+      color: 0xdff7ff, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    })
+  );
+  lightningPillar.frustumCulled = false;
+  lightningGlow = makeGlow(0xc9efff, 4.5);
+  lightningRing.visible = lightningPillar.visible = lightningGlow.visible = false;
+  G.scene.add(lightningRing, lightningPillar, lightningGlow);
+}
+
+function chooseLightningTarget() {
+  const pl = G.player;
+  if (!pl || pl.mode !== 'ground') return false;
+  const p = pl.pos;
+  const seed = (G.time * 10) | 0;
+  for (let i = 0; i < 10; i++) {
+    const a = hash2(seed, i, 701) * Math.PI * 2;
+    // Start inside the danger radius, but never dead-centre: walking roughly
+    // one body length during the 1.1s warning is enough to escape.
+    const r = 0.65 + hash2(seed, i, 709) * 0.65;
+    const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+    const y = heightAt(x, z);
+    if (y <= WATER_Y + 0.25 || slopeAt(x, z) > 0.62 || Math.abs(y - p.y) > 1.6) continue;
+    let hidden = false;
+    for (let j = 0; j < G.colliders.length; j++) {
+      const c = G.colliders[j];
+      if (c.soft || !c.r) continue;
+      const dx = x - c.x, dz = z - c.z;
+      if (dx * dx + dz * dz < (c.r + 2.2) * (c.r + 2.2)) { hidden = true; break; }
+    }
+    if (hidden) continue;
+    strikeX = x; strikeY = y; strikeZ = z;
+    return true;
+  }
+  return false;
+}
+
+function showLightningMarker() {
+  lightningRing.visible = lightningPillar.visible = lightningGlow.visible = true;
+  lightningRing.position.set(strikeX, strikeY + 0.07, strikeZ);
+  lightningPillar.position.set(strikeX, strikeY + 20, strikeZ);
+  lightningGlow.position.set(strikeX, strikeY + 0.35, strikeZ);
+}
+
+function hideLightningMarker() {
+  if (!lightningRing) return;
+  lightningRing.visible = lightningPillar.visible = lightningGlow.visible = false;
+}
 
 function updateLightning(dt) {
   if (thunderT >= 0) {
@@ -192,13 +323,59 @@ function updateLightning(dt) {
     }
   }
   if (flashT > 0) flashT -= dt;
-  if (wKind === 'storm' && wBlend > 0.6 && !G.bloodNight) {
-    boltTimer -= dt;
-    if (boltTimer <= 0) {
-      boltTimer = 6 + Math.random() * 12;
+
+  const storm = wKind === 'storm' && wBlend > 0.6 && !G.bloodNight && G.started;
+  if (lightningState === 0) {
+    hideLightningMarker();
+    if (storm && !G.gameOver && stormGustPhase === 0) {
+      boltTimer -= dt;
+      if (boltTimer <= 0) {
+        if (chooseLightningTarget()) {
+          lightningState = 1;
+          lightningT = LIGHTNING_WARN;
+          showLightningMarker();
+          if (G.audio) G.audio.sfx('windup');
+          if (G.ui) G.ui.toast('Lightning gathering — move from the ring!', 0xd8f3ff);
+        } else boltTimer = 1; // perched/climbing: retry later, never strike blindly
+      }
+    }
+  } else if (lightningState === 1) {
+    lightningT -= dt;
+    const p = clamp(1 - lightningT / LIGHTNING_WARN, 0, 1);
+    const pulse = 0.82 + Math.sin(G.time * 24) * 0.18;
+    lightningRing.scale.setScalar(1 + Math.sin(G.time * 10) * 0.06);
+    lightningRing.material.opacity = (0.22 + p * 0.5) * pulse;
+    lightningPillar.scale.set(0.28 + p * 0.5, 40, 0.28 + p * 0.5);
+    lightningPillar.material.opacity = (0.08 + p * 0.26) * pulse;
+    lightningGlow.material.opacity = 0.22 + p * 0.5;
+    lightningGlow.scale.setScalar(3.5 + p * 2.2);
+    if (lightningT <= 0) {
+      lightningState = 2;
+      lightningT = LIGHTNING_AFTER;
       flashT = FLASH_DUR;
-      G.camShake += 0.2;
-      thunderT = 0.5 + Math.random() * 2.5; // farther strikes rumble later
+      thunderT = 0.06;
+      G.camShake += 0.48;
+      G.hitStopT = Math.max(G.hitStopT, 0.06);
+      spawnSparkle(strikeX, strikeY + 0.35, strikeZ, 0xdff7ff, 34, 7);
+      const pl = G.player;
+      if (pl && Math.hypot(pl.pos.x - strikeX, pl.pos.z - strikeZ) < 2.1 &&
+          Math.abs(pl.pos.y - strikeY) < 2.4) {
+        pl.damage(4, strikeX, strikeZ, true); // lightning bypasses a raised shield
+      }
+    }
+  } else {
+    lightningT -= dt;
+    const p = clamp(1 - lightningT / LIGHTNING_AFTER, 0, 1);
+    lightningRing.scale.setScalar(1 + p * 1.8);
+    lightningRing.material.opacity = (1 - p) * 0.85;
+    lightningPillar.scale.set(2.8 * (1 - p), 40, 2.8 * (1 - p));
+    lightningPillar.material.opacity = (1 - p) * 0.95;
+    lightningGlow.material.opacity = (1 - p) * 0.9;
+    lightningGlow.scale.setScalar(6 + p * 5);
+    if (lightningT <= 0) {
+      lightningState = 0;
+      boltTimer = 11 + hash2((G.time * 9) | 0, 733) * 9;
+      hideLightningMarker();
     }
   }
   const flash = flashT > 0 ? flashT / FLASH_DUR : 0;
@@ -403,6 +580,7 @@ export function buildSky() {
   buildClouds();
   buildRain();
   buildStreaks();
+  buildLightningMarker();
 }
 
 function buildClouds() {
@@ -590,11 +768,14 @@ function spawnAmbientStreak(o, pc) {
   const d = streakData;
   const a = Math.random() * Math.PI * 2;
   const r = 6 + Math.random() * 20;
+  const cue = Math.max(G.weather.gustTelegraph || 0, G.weather.gustPulse || 0);
   d[o] = 0;
   d[o + 1] = pc.x + Math.cos(a) * r;
   d[o + 2] = pc.y + (Math.random() - 0.3) * 8;
   d[o + 3] = pc.z + Math.sin(a) * r;
-  d[o + 4] = (Math.random() - 0.5) * 0.6; // heading: mostly downwind (+x)
+  d[o + 4] = cue > 0.01
+    ? Math.atan2(G.weather.gustDz || 0, G.weather.gustDx || 1) + (Math.random() - 0.5) * 0.18
+    : (Math.random() - 0.5) * 0.6; // ordinary weather: mostly downwind (+x)
   d[o + 6] = 1.2 + Math.random() * 1.4;
   d[o + 5] = d[o + 6];
   d[o + 7] = 6 + Math.random() * 3; // scaled by live windMul during update
@@ -619,6 +800,8 @@ function spawnUpdraftStreak(o, z) {
 function updateStreaks(dt, pc) {
   const d = streakData;
   const ambientOn = wCur.windMul >= 1.5;
+  const stormCue = Math.max(G.weather.gustTelegraph || 0, G.weather.gustPulse || 0);
+  streakMesh.material.opacity = 0.42 + stormCue * 0.34;
 
   // reservoir-pick one eligible updraft zone within 120m (skip expired ones)
   let zone = null, zn = 0;
@@ -632,7 +815,7 @@ function updateStreaks(dt, pc) {
     if (Math.random() * zn < 1) zone = z;
   }
 
-  let spawnUp = 2, spawnAmb = 2; // per-frame spawn budget
+  let spawnUp = 2, spawnAmb = stormCue > 0.01 ? 6 : 2; // warned gust rapidly fills aligned slots
   let anyActive = false;
   for (let i = 0; i < STREAK_N; i++) {
     const o = i * STREAK_STRIDE;
@@ -644,7 +827,7 @@ function updateStreaks(dt, pc) {
     if (d[o + 5] > 0) {
       d[o + 5] -= dt;
       if (d[o] === 0) { // ambient: drift downwind
-        const sp = d[o + 7] * wCur.windMul;
+        const sp = d[o + 7] * wCur.windMul * (1 + stormCue * 1.2);
         d[o + 1] += Math.cos(d[o + 4]) * sp * dt;
         d[o + 3] += Math.sin(d[o + 4]) * sp * dt;
         _fwd.set(Math.cos(d[o + 4]), 0, Math.sin(d[o + 4]));
@@ -682,6 +865,7 @@ export function updateSky(dt) {
   const t = G.dayTime;
 
   updateWeather(dt);
+  updateStormGust(dt);
   const grim = wCur.grim;
 
   // sun position: t=0.5 noon overhead; orbit in a tilted plane

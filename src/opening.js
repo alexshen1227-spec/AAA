@@ -4,8 +4,8 @@
 // island, revealing the mystery. Letterboxed, skippable, runs once per save.
 import * as THREE from 'three';
 import { G, save } from './state.js';
-import { heightAt } from './terrain.js';
-import { contractInstance } from './assets.js';
+import { heightAt, toonMat } from './terrain.js';
+import { contractInstance, preloadModels } from './assets.js';
 import { spawnSparkle } from './world.js';
 
 let stage = -1, t = 0;
@@ -13,6 +13,54 @@ const said = {}; // one-shot dialog flags — timing never depends on frame size
 let barTop = null, barBot = null, skipEl = null;
 const camFrom = new THREE.Vector3();
 const camTo = new THREE.Vector3();
+let skipArmed = false, prevSkip = false;
+let debrisRoot = null, debrisFallback = null, debrisColliderAdded = false;
+
+function makeDebrisFallback() {
+  const g = new THREE.Group();
+  const stone = toonMat({ color: 0x777b86 });
+  const bronze = toonMat({ color: 0x3d856f });
+  for (const [x, y, z, sx, sy, sz, rz] of [
+    [-1.2, 0.5, 0.2, 2.5, 0.7, 1.2, 0.25],
+    [1.0, 0.7, -0.5, 1.5, 1.0, 1.0, -0.42],
+    [0.2, 0.3, 1.0, 1.2, 0.5, 1.8, 0.12],
+  ]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), stone);
+    m.position.set(x, y, z); m.rotation.set(0.12, rz * 2, rz); m.castShadow = true;
+    g.add(m);
+  }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.14, 7, 20), bronze);
+  ring.position.set(0.15, 0.65, 0.05); ring.rotation.set(1.1, 0.25, 0.4); ring.castShadow = true;
+  g.add(ring);
+  return g;
+}
+
+function placeDebris(root) {
+  root.position.set(30, heightAt(30, -96), -96);
+  root.rotation.y = 0.8;
+  G.scene.add(root);
+}
+
+function ensureOpeningDebris() {
+  if (debrisRoot) return;
+  const ci = contractInstance('sky_debris');
+  debrisRoot = ci ? ci.root : makeDebrisFallback();
+  debrisFallback = ci ? null : debrisRoot;
+  placeDebris(debrisRoot);
+  if (!debrisColliderAdded) {
+    debrisColliderAdded = true;
+    G.colliders.push({ x: 30, z: -96, r: 2.2, top: heightAt(30, -96) + 1.4 });
+  }
+  if (!ci) preloadModels(['sky_debris']).then(res => {
+    if (!res || !res.sky_debris || debrisRoot !== debrisFallback) return;
+    const loaded = contractInstance('sky_debris');
+    if (!loaded) return;
+    G.scene.remove(debrisRoot);
+    debrisRoot = loaded.root;
+    debrisFallback = null;
+    placeDebris(debrisRoot);
+  }).catch(() => { });
+}
 
 export function bars(show, showSkip = show) {
   if (!barTop) {
@@ -41,22 +89,17 @@ export function bars(show, showSkip = show) {
 export function isCinematic() { return stage >= 0 && stage < 3; }
 
 export function initOpening() {
+  ensureOpeningDebris();
   if (G.tut.openingDone) return;
   stage = 0; t = 0;
+  prevSkip = !!G.keys['Space'];
+  skipArmed = !prevSkip;
   G.cinematic = true;
   // wake beside Maren
   const P = G.player;
   P.pos.set(45, heightAt(45, -82), -82);
   P.camYaw = Math.atan2(42 - 45, -84 + 82); // facing the Wayfarer
   P.yaw = P.camYaw;
-  // the fallen sky-ruin smolders on the meadow within view
-  const ci = contractInstance('sky_debris');
-  if (ci) {
-    ci.root.position.set(30, heightAt(30, -96), -96);
-    ci.root.rotation.y = 0.8;
-    G.scene.add(ci.root);
-    G.colliders.push({ x: 30, z: -96, r: 2.2, top: heightAt(30, -96) + 1.4 });
-  }
   bars(true);
 }
 
@@ -66,12 +109,20 @@ export function updateOpening(dt) {
   if (stage < 0) return;
   const P = G.player;
   const cam = G.camera;
-  // skip: jump straight to the task beat
-  if (stage < 3 && G.keys['Space']) { stage = 3; t = 0; }
+  // Skip only on a fresh press. Space may also have started the game, and
+  // carrying that same held key into frame one used to erase the whole opening.
+  const skipDown = !!G.keys['Space'];
+  if (!skipDown) skipArmed = true;
+  if (stage < 3 && skipArmed && skipDown && !prevSkip) {
+    stage = 3; t = 0; skipArmed = false;
+    G.keys._spaceLatch = true; // held skip must not become a jump as control returns
+  }
+  prevSkip = skipDown;
 
   if (stage >= 0 && stage < 3) {
     // suppress player input during the letterboxed beats
     for (const k in G.keys) { if (k !== 'Space') G.keys[k] = false; }
+    G.keys._spaceLatch = true; // retained skip key can never leak into player jump logic
     G.mouse.dx = G.mouse.dy = 0;
   }
 
@@ -128,6 +179,7 @@ export function updateOpening(dt) {
   } else if (stage === 4) {
     // the beacon answers: slow orbit, then lift to the sky island
     for (const k in G.keys) G.keys[k] = false;
+    G.keys._spaceLatch = true;
     G.mouse.dx = G.mouse.dy = 0;
     const s = G.shrines[0];
     if (t < 3.5) {
