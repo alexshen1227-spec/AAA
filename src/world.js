@@ -17,6 +17,7 @@ export const ITEM_DEFS = {
   pod: { name: 'Zephyr Pod', tint: 0x9fe8d8, note: 'a bottled updraft — G throws it' },
   sigil: { name: 'The Warden\'s Sigil', tint: 0x9fffc8, note: 'the ninth pedestal\'s answer' },
   fork: { name: 'The Skysong Fork', tint: 0x9fe8d8, note: 'strike it, and the unfound answer' },
+  hushbell: { name: 'The Hush Bell', tint: 0xd8d2ff, note: 'the world slows; you do not' },
 };
 
 export function markSeen(kind) {
@@ -2099,7 +2100,7 @@ function applyOpenedChest(chest) {
   chest.lid.rotation.x = chest.openAngle || -1.9;
 }
 
-function makeChest(id, x, y, z, yaw, loot, gate) {
+export function makeChest(id, x, y, z, yaw, loot, gate) {
   if (!chestKit) {
     chestKit = {
       baseGeo: new THREE.BoxGeometry(0.95, 0.52, 0.62),

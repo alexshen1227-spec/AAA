@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { G } from './state.js';
 import { heightAt, toonMat } from './terrain.js';
 import {
-  spawnSparkle, registerStandSurface, makePuzzleCrate, markSeen,
+  spawnSparkle, registerStandSurface, makePuzzleCrate, markSeen, makeChest,
 } from './world.js';
 import { mergeGeometries } from './BufferGeometryUtils.js';
 import { contractInstance, preloadModels } from './assets.js';
@@ -578,6 +578,9 @@ function buildStations() {
   registerStandSurface({ x: towerSlot.x, z: towerSlot.z, r: 2.1, top: towerSlot.top + 9 });
   makeRune('coilRuneStill', towerSlot.x + 0.9, towerSlot.z - 0.9, towerSlot.top + 9,
     'Touch the wind-rune of still air');
+  // the highest honest climb in the game keeps the quietest prize
+  makeChest('chest.coil-tower-hush', towerSlot.x - 0.9, towerSlot.top + 9, towerSlot.z + 0.9,
+    0.8, { kind: 'hushbell' });
 }
 
 function rouseVent() {

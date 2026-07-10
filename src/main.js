@@ -487,45 +487,53 @@ function step(dt, now) {
     G.lastLight = Math.max(0, G.lastLight - dt * (G.slowmo > 0 ? 0.5 : 1.5));
   }
 
+  // The Hush Bell inverts the Last Light trick: the WORLD takes a scaled dt
+  // while the player keeps the real one. G.time slows with the world, so
+  // every sway and drift dreams along; player physics stays crisp.
+  const hushOn = G.buffs && G.buffs.hushT > 0 && G.started && !G.gameOver;
+  if (hushOn) G.buffs.hushT -= dt; // real seconds: the bell keeps honest time
+  G.hushK = Math.max(0, Math.min(1, (G.hushK || 0) + (hushOn ? dt * 3 : -dt * 3)));
+  const wdt = dt * (1 - G.hushK * 0.55);
+
   if (G.started && !G.gameOver) {
-    G.time += dt;
+    G.time += wdt;
     G.player.update(dt);
     recoverOutOfWorld();
   }
 
-  updateSky(G.started ? dt : dt * 0.15);
+  updateSky(G.started ? wdt : dt * 0.15);
   updateWater(G.time);
   if (G.started) {
     updateGrass();
-    updateShrines(dt);
+    updateShrines(wdt);
     updateTowers();
-    updateCrates(dt);
-    updatePickups(dt);
-    updateEnemies(G.gameOver ? 0 : dt);
-    updateSparkles(dt);
+    updateCrates(wdt);
+    updatePickups(wdt);
+    updateEnemies(G.gameOver ? 0 : wdt);
+    updateSparkles(wdt);
     updateBirds(isNight());
     updateFireflies(isNight());
-    updateAmbient(dt, isNight());
-    updateAnimals(dt, isNight());
+    updateAmbient(wdt, isNight());
+    updateAnimals(wdt, isNight());
     updateTutorial(dt);
     updateOpening(dt);
     updateGolems();
     updateIslands();
-    updateWayfarer(dt);
+    updateWayfarer(wdt);
     // frozen while dead: no deed kindles, letter catches, or one-shot
     // gloamings should play out over the game-over screen
-    if (!G.gameOver) updateRemembering(dt, isNight());
-    if (!G.gameOver) updateAdventure(dt, isNight());
-    if (!G.gameOver) updateCoil(dt);
-    if (!G.gameOver) updateFinale(dt);
-    if (!G.gameOver) updateFallenStar(dt);
-    if (!G.gameOver) updateSquall(dt);
-    if (!G.gameOver) updateHearths(dt);
-    if (!G.gameOver) updateGloamhounds(dt);
-    if (!G.gameOver) updateUnderMere(dt);
-    if (!G.gameOver) updateDrift(dt);
-    if (!G.gameOver) updateVigil(dt);
-    if (!G.gameOver) updateEmberside(dt);
+    if (!G.gameOver) updateRemembering(wdt, isNight());
+    if (!G.gameOver) updateAdventure(wdt, isNight());
+    if (!G.gameOver) updateCoil(wdt);
+    if (!G.gameOver) updateFinale(wdt);
+    if (!G.gameOver) updateFallenStar(wdt);
+    if (!G.gameOver) updateSquall(wdt);
+    if (!G.gameOver) updateHearths(wdt);
+    if (!G.gameOver) updateGloamhounds(wdt);
+    if (!G.gameOver) updateUnderMere(wdt);
+    if (!G.gameOver) updateDrift(wdt);
+    if (!G.gameOver) updateVigil(wdt);
+    if (!G.gameOver) updateEmberside(wdt);
     if (!G.gameOver) updateQuests(dt);
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();

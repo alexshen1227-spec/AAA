@@ -791,6 +791,9 @@ export class UI {
         { key: 'fork', model: 'skysong_fork', emoji: '🎶', name: 'THE SKYSONG FORK', count: G.items.fork,
           seen: !!G.seen.fork, use: 'fork', effect: 'Use: the unfound ring nearby (20s)',
           desc: 'Maerwen\'s tuning fork, verdigris bronze. Struck, it asks the dark a question, and whatever you have not found yet answers — near rings high, far rings low.' },
+        { key: 'hushbell', emoji: '🔔', name: 'THE HUSH BELL', count: G.items.hushbell,
+          seen: !!G.seen.hushbell, use: 'hushbell', effect: 'Use: the world slows 8s — you don\'t',
+          desc: 'A small bell with no clapper. Ring it anyway. The valley leans in to listen, and for a few long breaths, everything but you moves like it is remembering how.' },
       ],
       gear: [
         { key: 'bow', model: 'bow', emoji: '🏹', name: 'WIND BOW', count: -1, seen: true,
@@ -981,6 +984,15 @@ export class UI {
       G.buffs.forkUntil = G.time + 20;
       this.toast('The fork rings once — and waits for answers.', 0x9fe8d8);
       G.audio.chord([440, 880], 0.1, 0.08);
+    } else if (key === 'hushbell' && G.items.hushbell > 0) {
+      if (G.buffs.hushReadyAt > G.time) {
+        this.toast('The bell is still remembering its last silence.', 0xcccccc);
+        return;
+      }
+      G.buffs.hushT = 8; // burned in REAL seconds by main.js — the slowed
+      G.buffs.hushReadyAt = G.time + 90; // clock must not extend its own silence
+      this.toast('The valley leans in to listen.', 0xd8d2ff);
+      G.audio.chord([220, 330], 0.07, 1.4);
     } else if (key === 'shard' && G.items.shard > 0) {
       G.items.shard--;
       G.buffs.vigorUntil = G.time + 60;

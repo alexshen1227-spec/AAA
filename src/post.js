@@ -334,10 +334,12 @@ export function initPost(renderer) {
       compU.uHurtAmt.value = G.hurtAmt || 0;
       compU.uHurtDir.value = G.hurtDir || 0;
       // Last Light: a camp's final fall blooms briefly warmer (enemies.js
-      // sets G.lastLight to 1; main.js decays it)
+      // sets G.lastLight to 1; main.js decays it). The Hush Bell drains a
+      // little color instead — the world holding its breath.
       const lastLight = G.lastLight || 0;
-      compU.uSaturation.value = SATURATION * (1 + 0.22 * lastLight);
-      compU.uExposure.value = EXPOSURE * (1 + 0.14 * lastLight);
+      const hush = G.hushK || 0;
+      compU.uSaturation.value = SATURATION * (1 + 0.22 * lastLight - 0.16 * hush);
+      compU.uExposure.value = EXPOSURE * (1 + 0.14 * lastLight - 0.05 * hush);
 
       // 1. scene -> HDR target (MSAA auto-resolves at the end of render())
       renderer.setRenderTarget(rtScene);
