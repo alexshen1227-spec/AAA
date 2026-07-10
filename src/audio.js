@@ -390,8 +390,75 @@ export class AudioSys {
     this.master.gain.value = G.settings.mute ? 0 : 0.6;
     this.updateMusicReal(dt, night);
     this.updateMusic();
+    this.updateSonglines();
     this.updateAmbience(dt, night, altitude, gliding);
     this.updateWarDrums(dt, night);
+  }
+
+  // -------- songlines ------------------------------------------------------
+  // The restored valley plays itself back. Each landmark the player brought
+  // to life contributes a sparse instrumental voice woven over the score —
+  // bells for the eight beacons, an open low fifth for the Mirrormere
+  // lanterns, bronze tones for the summit chimes, a settling drone once the
+  // hundred-year storm is stilled. Standing in a voice's own country brings
+  // it forward. Never announced, never explained: one day a bell is simply
+  // there, because the player put it there.
+  updateSonglines() {
+    if (G.settings.mute || G.bloodNight || G.gameOver || !G.started) return;
+    const t = this.ctx.currentTime;
+    if (!this.nextSongline) this.nextSongline = t + 20;
+    if (t < this.nextSongline) return;
+    const flags = (G.story && G.story.flags) || {};
+    const region = G.region || '';
+    const p = G.player && G.player.pos;
+    const voices = [];
+    if (G.shrines && G.shrines.length && G.shrines.every(s => s.active)) {
+      voices.push({
+        w: region === 'The Heartfields' || region === "Wanderer's Plateau" ? 3 : 1,
+        play: () => { // the eight flames: two small bells, high and patient
+          this.pianoNote(880, t, 0.045, 2.4);
+          this.pianoNote(1174.7, t + 0.55, 0.035, 2.8);
+        },
+      });
+    }
+    if (flags.lanternsReported) {
+      voices.push({
+        w: region === 'Mirrormere' ? 3 : 1,
+        play: () => { // the moon-road: an open fifth, low and long
+          this.pianoNote(110, t, 0.055, 7);
+          this.pianoNote(164.8, t + 0.5, 0.045, 7);
+        },
+      });
+    }
+    if (flags.chimesResolved) {
+      voices.push({
+        w: p && p.y > 40 ? 3 : 1,
+        play: () => { // the summit chimes: dawn, gale — and sometimes rain
+          this.pianoNote(293.66, t, 0.05, 3.2);
+          this.pianoNote(392, t + 0.5, 0.045, 3.6);
+          if (Math.random() < 0.4) this.pianoNote(523.25, t + 1.05, 0.04, 3.8);
+        },
+      });
+    }
+    if (flags.finaleCompleted) {
+      voices.push({
+        w: (p && p.z > 300) || region === 'The Sunder Ring' ? 3 : 1,
+        play: () => { // the stilled storm: fifths settling like dust
+          this.pianoNote(110, t, 0.045, 9);
+          this.pianoNote(220, t + 0.8, 0.04, 8);
+          this.pianoNote(330, t + 1.7, 0.03, 7);
+        },
+      });
+    }
+    if (!voices.length) { this.nextSongline = t + 30; return; }
+    let total = 0;
+    for (const v of voices) total += v.w;
+    let r = Math.random() * total;
+    for (const v of voices) {
+      r -= v.w;
+      if (r <= 0) { v.play(); break; }
+    }
+    this.nextSongline = t + 24 + Math.random() * 22;
   }
 
   // -------- war drums ------------------------------------------------------

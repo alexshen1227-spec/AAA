@@ -346,6 +346,7 @@ function updateRegion() {
     else if (inRiver(p.x, p.z)) name = "The Serpent's Run";
     else name = 'The Heartfields';
   }
+  G.region = name; // audio.js songlines forefront each country's own voice
   if (name !== lastRegion) {
     lastRegion = name;
     // first-ever entry: the land introduces itself with a letterboxed title
