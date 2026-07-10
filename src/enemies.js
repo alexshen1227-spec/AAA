@@ -2719,6 +2719,9 @@ export function respawnFallen() {
       n++;
       continue;
     }
+    // only camp boglins answer the crimson moon — fallen razorkites and
+    // dispersed gloamhounds share the enemy contract but not this rite
+    if (!e.camp) continue;
     e.dead = false;
     e.dying = false;
     e.dyingT = 0;
