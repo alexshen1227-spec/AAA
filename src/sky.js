@@ -1026,6 +1026,8 @@ export function updateSky(dt) {
       s.dx = -Math.cos(a + 0.7) * 150; s.dy = -60; s.dz = -Math.sin(a + 0.7) * 150;
       s.t = 0; s.T = 1.1;
       s.m.visible = true;
+      // now and then one does not burn out — fallenstar.js takes it from here
+      if (hash2((G.time * 13) | 0, 101) < 0.16) G.pendingStarfall = true;
       break;
     }
   }

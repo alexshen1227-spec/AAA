@@ -23,6 +23,7 @@ import { buildQuests, updateQuests } from './quests.js';
 import { buildAdventure, updateAdventure } from './adventure.js';
 import { buildCoil, updateCoil } from './coil.js';
 import { updateFinale } from './finale.js';
+import { updateFallenStar } from './fallenstar.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -499,6 +500,7 @@ function step(dt, now) {
     if (!G.gameOver) updateAdventure(dt, isNight());
     if (!G.gameOver) updateCoil(dt);
     if (!G.gameOver) updateFinale(dt);
+    if (!G.gameOver) updateFallenStar(dt);
     if (!G.gameOver) updateQuests(dt);
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();
