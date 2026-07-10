@@ -1427,6 +1427,9 @@ class Boglin {
     const distToPlayer = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
 
     // don't bother updating far-away enemies (release any held pool item first)
+    // ...or drawing them: past 140m a boglin is a sub-pixel in the haze, but
+    // still ~25 draw calls between the main and shadow passes
+    this.group.visible = distToPlayer < 140;
     if (distToPlayer > 120) { this.releaseRock(); this.releaseDisc(); return; }
 
     this.flashT = Math.max(0, this.flashT - dt);
@@ -2405,7 +2408,8 @@ class Hollow {
     const p = G.player.pos;
     const distToPlayer = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
 
-    // far away: AI and the AnimationMixer both sleep
+    // far away: AI, the AnimationMixer, and the renderer all sleep
+    this.group.visible = distToPlayer < 140;
     if (distToPlayer > 120) return;
 
     this.flashT = Math.max(0, this.flashT - dt);
