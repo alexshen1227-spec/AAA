@@ -67,24 +67,25 @@ function logged() {
 
 export function updateJournal() {
   if (!G.started) return;
-  if (!built) {
-    built = true;
-    // catch a loaded save up to its current state WITHOUT stamping the wrong
-    // day: pre-existing beats are backfilled at day 0 only if truly missing
-  }
   const entries = logged();
   const have = new Set(entries.map(e => e.id));
+  // First tick on a loaded save: any beat already satisfied by pre-journal
+  // progress is backfilled silently at day 0, so an old deed reads "Day 1"
+  // (the beginning) instead of being stamped with today's date. New beats
+  // that fire during live play still get the current day, one per tick.
+  const stampDay = built ? (Number.isFinite(G.dayCount) ? G.dayCount : 0) : 0;
   let wrote = false;
   for (const beat of BEATS) {
     if (have.has(beat.id)) continue;
     let ok = false;
     try { ok = !!beat.test(); } catch (e) { ok = false; }
     if (!ok) continue;
-    entries.push({ d: Number.isFinite(G.dayCount) ? G.dayCount : 0, id: beat.id });
+    entries.push({ d: stampDay, id: beat.id });
     have.add(beat.id);
     wrote = true;
-    break; // one line per tick — the pages fill the way a diary fills
+    if (built) break; // in play, one line per tick — the diary fills a page at a time
   }
+  built = true; // subsequent ticks stamp the real day and write one at a time
   if (wrote) { try { save(); } catch (e) { /* best effort */ } }
 }
 

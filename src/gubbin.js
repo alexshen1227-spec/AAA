@@ -80,6 +80,9 @@ function buildGubbin() {
   };
   G.interactables.push(it);
   gubbin = { root, mats, it, spookT: 0, home: new THREE.Vector3(HOME.x, y, HOME.z), line: 0 };
+  // resume where the conversation left off; the cache flag survives reloads so
+  // it is never re-spawned (which used to leak a redundant chest + prompt)
+  if (flag('gubbinCache')) { cacheMade = true; gubbin.line = 2; }
   if (flag('gubbinMet')) gubbin.line = LINES.length - 1;
 }
 
@@ -92,11 +95,13 @@ function useGubbin() {
   const [name, text, more] = LINES[i];
   G.ui.dialog(name, text, more);
   G.audio.sfx(i === 0 ? 'lock' : 'ui_open');
-  if (i === 2 && !cacheMade) {
+  if (i === 2 && !cacheMade && !flag('gubbinCache')) {
     cacheMade = true;
+    if (G.story && G.story.flags) G.story.flags.gubbinCache = true;
     makeChest('chest.gubbin-hoard', CACHE.x, heightAt(CACHE.x, CACHE.z), CACHE.z,
       1.4, { kind: 'gems', n: 7 });
     spawnSparkle(CACHE.x, heightAt(CACHE.x, CACHE.z) + 0.6, CACHE.z, 0xffdf8a, 8, 2);
+    save();
   }
   if (!flag('gubbinMet') && gubbin.line >= LINES.length - 1) {
     setGubbinMet();

@@ -26,6 +26,11 @@ let echo = null;     // {group, mat, it}
 let toneAt = 0;
 
 const isNightNow = () => G.dayTime < 0.21 || G.dayTime > 0.79;
+// a held crystal tone — guarded so a missing AudioContext can never throw in
+// the update loop (which precedes several sibling systems in the frame)
+function tone(freq, vel, dur) {
+  if (G.audio && G.audio.ctx) G.audio.pianoNote(freq, G.audio.ctx.currentTime, vel, dur);
+}
 function nightId() {
   return G.dayTime > 0.79 ? G.dayCount : G.dayTime < 0.21 ? G.dayCount - 1 : null;
 }
@@ -52,14 +57,26 @@ function buildVigil() {
   for (const site of SITES) {
     const y = heightAt(site.x, site.z);
     if (site.place) {
-      const m = propInstance('pk_crystal');
-      if (m) {
-        m.position.set(site.x, y - 0.06, site.z);
-        m.rotation.y = site.note; // arbitrary but stable
-        m.scale.setScalar(1.5);
-        G.scene.add(m);
-        G.colliders.push({ x: site.x, z: site.z, r: 1.0, top: y + 1.6 });
-      }
+      // the placed crystal; a procedural fallback guarantees there is always
+      // something under the prompt even if the GLB never loads
+      const m = propInstance('pk_crystal') || (() => {
+        const g = new THREE.Group();
+        for (let i = 0; i < 3; i++) {
+          const shard = new THREE.Mesh(
+            new THREE.ConeGeometry(0.18 - i * 0.03, 1.1 - i * 0.25, 5),
+            toonMat({ color: 0x8ab0d8 }));
+          shard.position.set((i - 1) * 0.18, 0.55, (i % 2) * 0.12);
+          shard.rotation.z = (i - 1) * 0.2;
+          g.add(shard);
+        }
+        return g;
+      })();
+      m.position.set(site.x, y - 0.06, site.z);
+      m.rotation.y = site.note; // arbitrary but stable
+      m.scale.setScalar(1.5);
+      m.traverse(o => { if (o.isMesh) o.castShadow = true; });
+      G.scene.add(m);
+      G.colliders.push({ x: site.x, z: site.z, r: 1.0, top: y + 1.6 });
     }
     const glow = makeGlowSprite(0xbfd8ff, 3.2);
     glow.position.set(site.x, y + 1.6, site.z);
@@ -117,12 +134,12 @@ function touchCrystal(rec) {
   }
   const n = nightId();
   if (rec.lit && rec.litNight === n) {
-    G.audio.pianoNote(rec.site.note, G.audio.ctx.currentTime, 0.06, 3);
+    tone(rec.site.note, 0.06, 3);
     return;
   }
   rec.lit = true;
   rec.litNight = n;
-  G.audio.pianoNote(rec.site.note, G.audio.ctx.currentTime, 0.09, 4);
+  tone(rec.site.note, 0.09, 4);
   spawnSparkle(rec.site.x, heightAt(rec.site.x, rec.site.z) + 1.6, rec.site.z, 0xbfd8ff, 24, 3.5);
   const count = litCount();
   if (count < SITES.length) {
@@ -171,7 +188,7 @@ export function updateVigil(dt = 0) {
     const holding = crystals.filter(c => c.lit && c.litNight === n);
     if (holding.length) {
       const rec = holding[(Math.random() * holding.length) | 0];
-      G.audio.pianoNote(rec.site.note, G.audio.ctx.currentTime, 0.035, 3.5);
+      tone(rec.site.note, 0.035, 3.5);
     }
   }
   if (echo) {

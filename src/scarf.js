@@ -126,7 +126,7 @@ export function updateScarf(dt = 0) {
     positions[i * 6 + 5] = p.z + _side.z;
   }
   mesh.geometry.attributes.position.needsUpdate = true;
-  mesh.visible = !G.cinematic || true; // the scarf belongs in cutscenes too
+  mesh.visible = true; // the scarf streams in cutscenes too — always shown
 }
 
 export function getScarfSummary() {

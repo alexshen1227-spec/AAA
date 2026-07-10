@@ -18,7 +18,7 @@ const LEGACY_GLIMMER_IDS = [
 ];
 
 function emptyWorldState() {
-  return { chests: {}, glimmers: {}, pickups: {}, vaults: {} };
+  return { chests: {}, glimmers: {}, pickups: {}, vaults: {}, forage: {} };
 }
 
 function emptyQuests() {
@@ -166,6 +166,16 @@ function boolRecord(value) {
   return out;
 }
 
+// like boolRecord but keeps finite integers (forage last-harvest day-counts)
+function intRecord(value) {
+  const src = safeRecord(value);
+  const out = {};
+  for (const [key, val] of Object.entries(src)) {
+    if (typeof val === 'number' && Number.isFinite(val)) out[key] = Math.round(val);
+  }
+  return out;
+}
+
 function mergeDefaults(defaults, value) {
   const src = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const out = {};
@@ -188,6 +198,7 @@ function normalizeWorldState(value) {
     glimmers: boolRecord(src.glimmers),
     pickups: boolRecord(src.pickups),
     vaults: boolRecord(src.vaults),
+    forage: intRecord(src.forage),
   };
 }
 

@@ -8,7 +8,7 @@
 // Forage regrows with the days; nothing here is a checklist, only weather
 // and places and knowing when to look.
 import * as THREE from 'three';
-import { G } from './state.js';
+import { G, save } from './state.js';
 import { heightAt, slopeAt, inRiver, WATER_Y, toonMat } from './terrain.js';
 import { spawnSparkle, spawnHealBloom, markSeen } from './world.js';
 import { propInstance, preloadModels } from './assets.js';
@@ -98,6 +98,15 @@ function probe(cx, cz, spread, ok) {
   return null;
 }
 
+// per-site last-harvest day lives in the save (G.worldState.forage), so a
+// picked-clean site stays picked clean across a reload instead of regrowing
+// the same day (an ingredient-dup exploit before the fix).
+function forageBucket() {
+  if (!G.worldState) G.worldState = {};
+  if (!G.worldState.forage) G.worldState.forage = {};
+  return G.worldState.forage;
+}
+
 function addForage(kind, model, label, x, z, transient) {
   const y = heightAt(x, z);
   const root = new THREE.Group();
@@ -107,10 +116,11 @@ function addForage(kind, model, label, x, z, transient) {
     const inst = propInstance(model);
     if (inst) root.add(inst);
   }).catch(() => { });
-  const rec = { kind, x, z, root, takenDay: -99, transient };
+  // stable id from build order (deterministic) so the save key survives reloads
+  const id = `forage_${kind}_${forage.length}`;
+  const rec = { id, kind, x, z, root, transient };
   rec.it = {
-    id: `forage_${kind}_${forage.length}`,
-    pos: new THREE.Vector3(x, y + 0.5, z), r: 2.4, label,
+    id, pos: new THREE.Vector3(x, y + 0.5, z), r: 2.4, label,
     onUse() { gather(rec); },
   };
   G.interactables.push(rec.it);
@@ -118,7 +128,7 @@ function addForage(kind, model, label, x, z, transient) {
 }
 
 function forageAvailable(rec) {
-  if (rec.takenDay === G.dayCount) return false;
+  if (forageBucket()[rec.id] === G.dayCount) return false; // harvested today
   if (rec.transient) {
     // stormcaps fruit after honest rain and stand until the next dawn
     return G.time - lastRainAt < 600 && lastRainAt > 0;
@@ -135,12 +145,13 @@ function gather(rec) {
     }
     return;
   }
-  rec.takenDay = G.dayCount;
+  forageBucket()[rec.id] = G.dayCount;
   const n = 1 + (Math.random() < 0.4 ? 1 : 0);
   G.items[rec.kind] = (Number(G.items[rec.kind]) || 0) + n;
   markSeen(rec.kind);
   spawnSparkle(rec.x, heightAt(rec.x, rec.z) + 0.6, rec.z, 0xbfe8a0, 14, 2);
   G.audio.sfx('pickup');
+  save();
 }
 
 function buildForage() {
@@ -221,6 +232,7 @@ function useSimmerpot(potIndex) {
     G.audio.sfx('eat');
     G.audio.chord([330, 392], 0.06, 0.2);
     G.ui.toast(current.name + ' — eaten hot at the fire.', 0xffb45c, 4600);
+    save(); // spent ingredients + healed state must persist (no cook-refund)
     return;
   }
   // first press (or cycle): quote the next cookable recipe

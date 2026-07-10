@@ -87,7 +87,7 @@ function promptFor(state) {
 
 function updateOne(state, dt) {
   const root = state.gathering.root();
-  if (!root) return;
+  if (!root || !G.player) return; // hot loop: never trust a global the siblings guard
   const p = G.player.pos;
   const h = state.gathering.hearth;
   const playerNear = Math.hypot(p.x - h.x, p.z - h.z) < 7;
