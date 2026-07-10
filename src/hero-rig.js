@@ -53,6 +53,17 @@ const CLIPS = {
 const ONE_SHOTS = ['jump', 'land', 'attack0', 'attack1', 'attack2', 'hurt', 'death', 'pickup', 'throw'];
 const ATTACKS = ['attack0', 'attack1', 'attack2'];
 
+// The wayfarer wash: the KayKit knight shares one texture atlas, so a per-mesh
+// colour multiply re-dresses the shiny hero as a weathered traveller without
+// touching the skinning or a single animation. Steel plate reads as road-worn
+// ochre cloth and dulled bronze; the helm goes to quiet slate; the blade and
+// round shield keep their honest metal.
+const WAYFARER_TINT = {
+  Knight_Body: 0xb98f5a, Knight_ArmLeft: 0xb08653, Knight_ArmRight: 0xb08653,
+  Knight_LegLeft: 0x8f7150, Knight_LegRight: 0x8f7150,
+  Knight_Head: 0xe6c7a2, Knight_Helmet: 0x8b93a0, Knight_Cape: 0xd88a3a,
+};
+
 // rotate a bone about the character's local X axis (call AFTER mixer.update
 // so it composes with the playing clip; pivot stays at the bone origin)
 function leanBone(bone, group, angle) {
@@ -159,6 +170,16 @@ export class HeroRig {
             converted[src.uuid] = rimToon(m, 0.22);
           }
           o.material = converted[src.uuid];
+          // per-mesh wayfarer wash: clone the shared toon material so each
+          // body region can carry its own weathered tone (keyed by mesh name;
+          // the atlas detail survives the multiply)
+          const tint = WAYFARER_TINT[o.name];
+          if (tint !== undefined) {
+            const wm = o.material.clone();
+            wm.color.multiply(new THREE.Color(tint));
+            wm.onBeforeCompile = o.material.onBeforeCompile; // keep the rim fresnel
+            o.material = wm;
+          }
         }
         if (HIDE.indexOf(o.name) !== -1) o.visible = false;
       }
