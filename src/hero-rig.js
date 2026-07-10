@@ -53,6 +53,9 @@ const CLIPS = {
 const ONE_SHOTS = ['jump', 'land', 'attack0', 'attack1', 'attack2', 'hurt', 'death', 'pickup', 'throw'];
 const ATTACKS = ['attack0', 'attack1', 'attack2'];
 
+// the three friendly hearths, for the hands-at-the-fire idle (matches hearth.js)
+const HEARTH_POS = [[27, -106], [-143, 111], [3, 317]];
+
 // The wayfarer wash: the KayKit knight shares one texture atlas, so a per-mesh
 // colour multiply re-dresses the shiny hero as a weathered traveller without
 // touching the skinning or a single animation. Steel plate reads as road-worn
@@ -412,6 +415,48 @@ export class HeroRig {
     } else if (p.exhausted && m === 'ground') {
       const still = 1 - clamp(speed / 3, 0, 1);         // weary idle sway
       if (still > 0.01) leanBone(this.spine, g, (0.1 + Math.sin(G.time * 2.2) * 0.05) * still);
+    } else if (m === 'ground' && speed < 0.35 && p.moveInput === 0 &&
+               !p.aiming && !G.cinematic) {
+      // contextual idles: the hero becomes someone who lives here. Held bone
+      // lerps blended over the mixer's Idle, chosen by place and weather.
+      this.idleBlend = clamp((this.idleBlend || 0) + dt * 1.6, 0, 1);
+      const b = this.idleBlend;
+      const w = G.weather || {};
+      const t = G.time;
+      const storm = w.kind === 'storm' || (w.wetness || 0) > 0.7;
+      const gust = (w.gustPulse || 0) * ((w.windMul || 1) > 1.6 ? 1 : 0.4);
+      const alt = p.pos.y;
+      let nearHearth = false;
+      for (let i = 0; i < HEARTH_POS.length; i++) {
+        const dx = p.pos.x - HEARTH_POS[i][0], dz = p.pos.z - HEARTH_POS[i][1];
+        if (dx * dx + dz * dz < 30) { nearHearth = true; break; }
+      }
+      if (storm) {
+        // huddled against the weather, a fast shiver
+        const shiver = Math.sin(t * 22) * 0.05;
+        leanBone(this.upperarmL, g, (-0.9 + shiver) * b);
+        leanBone(this.upperarmR, g, (-0.9 - shiver) * b);
+        leanBone(this.spine, g, (0.18 + Math.abs(shiver)) * b);
+      } else if (gust > 0.25) {
+        // leaning into a living gust, one arm up against it
+        const dir = (w.gustDx || 0) * Math.sin(g.rotation.y) + (w.gustDz || 0) * Math.cos(g.rotation.y);
+        leanBone(this.spine, g, -0.22 * gust * dir * b);
+        leanBone(this.upperarmR, g, -0.6 * gust * b);
+      } else if (nearHearth) {
+        // hands held out to the warmth, swaying gently with it
+        const warm = 0.05 * Math.sin(t * 2.4);
+        leanBone(this.upperarmL, g, (-0.7 + warm) * b);
+        leanBone(this.upperarmR, g, (-0.7 - warm) * b);
+        leanBone(this.spine, g, 0.08 * b);
+      } else if (alt > 60) {
+        // shielding the eyes to gaze from a high place
+        leanBone(this.upperarmR, g, -1.35 * b);
+        leanBone(this.spine, g, -0.06 * b);
+      } else {
+        this.idleBlend = clamp(b - dt * 2.2, 0, 1); // nothing to do — settle back
+      }
+    } else if (this.idleBlend) {
+      this.idleBlend = clamp(this.idleBlend - dt * 2.4, 0, 1);
     }
 
     // landing squash pinches the whole rig from the feet
