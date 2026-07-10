@@ -58,6 +58,8 @@ Object.assign(MODELS, {
   tilla_gleaner: 'assets/models/blender/tilla_gleaner.glb',
   // Windwise Wilds: the herd's authored body (antlers node toggles bucks)
   deer: 'assets/models/blender/deer.glb',
+  // the gloamhound: a spectral stalker (shape only; materials become ghost-light)
+  gloamhound: 'assets/models/blender/gloamhound.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',
