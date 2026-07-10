@@ -15,6 +15,7 @@ import {
   buildAmbient, updateAmbient, updateGolems, syncWorldProgress, settleCrate,
 } from './world.js';
 import { buildEnemies, updateEnemies, respawnFallen } from './enemies.js';
+import { trimTinyShadowCasters } from './assets.js';
 import { buildAnimals, updateAnimals } from './animals.js';
 import { initTutorial, updateTutorial } from './tutorial.js';
 import { initOpening, updateOpening } from './opening.js';
@@ -228,6 +229,13 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') keys._spaceLatch = false;
 });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+// The title is a full-screen overlay, so it receives pointer input before the
+// canvas underneath. Keep its advertised click-to-begin path explicit and as
+// save-safe as the keyboard path.
+document.getElementById('title').addEventListener('click', () => {
+  if (!G.started) startGame(!!saved);
+});
 
 canvas.addEventListener('click', (e) => {
   if (!G.started) { startGame(!!saved); return; } // clicking safely continues a found save
@@ -556,6 +564,11 @@ function step(dt, now) {
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();
     if (frame % 3 === 0) updatePrompt();
+    // shadow diet: trinket-sized meshes cost a shadow-pass draw each but cast
+    // nothing visible. Sweep a few times so late-loading GLBs are covered too.
+    if (frame === 300 || frame === 1800 || frame === 7200) {
+      trimTinyShadowCasters(G.scene);
+    }
     if (doRender) G.ui.update(dt);
     G.audio.update(dt, isNight(), G.player.pos.y, G.player.mode === 'glide');
   } else {

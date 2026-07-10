@@ -289,3 +289,72 @@ export function loadAudioBuffer(ctx, path) {
     .then(buf => { audioBuffers[path] = buf; return buf; })
     .catch(err => { console.warn('audio failed to load:', path, err); return null; });
 }
+
+// ---- draw-call reduction -----------------------------------------------------
+import { mergeGeometries } from './BufferGeometryUtils.js';
+
+// Authored character GLBs keep every body part as its own mesh (a boglin is
+// 32). Inside one animated holder everything is rigid, so meshes that share a
+// material can be baked into a single mesh without changing a pixel. Material
+// IDENTITY is preserved (hit-flash / death-fade / emissive logic keeps
+// working); meshes named in `keep` (visibility-toggled nodes like warpaint,
+// throwable rocks) and skinned meshes are left untouched.
+const _inv = new THREE.Matrix4();
+export function mergeRigidChildren(holder, keep = []) {
+  const keepSet = new Set(keep);
+  holder.updateWorldMatrix(true, true);
+  _inv.copy(holder.matrixWorld).invert();
+
+  // collect every plain mesh in the subtree, bucketed by material + attributes
+  const buckets = new Map();
+  const taken = [];
+  holder.traverse(o => {
+    if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh) return;
+    if (keepSet.has(o.name)) return;
+    if (Array.isArray(o.material)) return; // multi-material: leave as-is
+    const g = o.geometry;
+    if (!g || !g.attributes.position) return;
+    const sig = o.material.uuid + '|' + Object.keys(g.attributes).sort().join(',') +
+      '|' + (g.index ? 'i' : 'n') + '|' + (o.castShadow ? 's' : '');
+    if (!buckets.has(sig)) buckets.set(sig, []);
+    buckets.get(sig).push(o);
+  });
+
+  for (const group of buckets.values()) {
+    if (group.length < 2) continue; // nothing saved by merging one mesh
+    const geos = group.map(o => {
+      const g = o.geometry.clone();
+      o.updateWorldMatrix(true, false);
+      g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(_inv, o.matrixWorld));
+      return g;
+    });
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue; // incompatible after all — keep the originals
+    const mesh = new THREE.Mesh(merged, group[0].material);
+    mesh.castShadow = group[0].castShadow;
+    mesh.receiveShadow = group[0].receiveShadow;
+    holder.add(mesh);
+    for (const o of group) { o.removeFromParent(); taken.push(o); }
+    for (const g of geos) g.dispose();
+  }
+  return taken.length;
+}
+
+// One post-build sweep: shadows from trinket-sized meshes are invisible but
+// each one is a shadow-pass draw call. Anything under `radius` world units
+// stops casting. Skips skinned meshes (characters read as silhouettes).
+const _s = new THREE.Vector3();
+export function trimTinyShadowCasters(root, radius = 0.35) {
+  let trimmed = 0;
+  root.traverse(o => {
+    if (!o.isMesh || !o.castShadow || o.isSkinnedMesh) return;
+    const g = o.geometry;
+    if (!g) return;
+    if (!g.boundingSphere) { try { g.computeBoundingSphere(); } catch (e) { return; } }
+    if (!g.boundingSphere) return;
+    o.getWorldScale(_s);
+    const r = g.boundingSphere.radius * Math.max(Math.abs(_s.x), Math.abs(_s.y), Math.abs(_s.z));
+    if (r < radius) { o.castShadow = false; trimmed++; }
+  });
+  return trimmed;
+}

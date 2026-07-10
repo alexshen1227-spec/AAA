@@ -603,7 +603,9 @@ export function buildSky() {
   dirLight.shadow.mapSize.set(3072, 3072);
   const sc = dirLight.shadow.camera;
   sc.near = 10; sc.far = 400;
-  sc.left = sc.bottom = -95; sc.right = sc.top = 95;
+  // ±65m around the player: past that, shadows read as tone anyway — the
+  // tighter box halves shadow-pass draws AND sharpens texel density
+  sc.left = sc.bottom = -65; sc.right = sc.top = 65;
   dirLight.shadow.bias = -0.0004;
   dirLight.shadow.normalBias = 0.35;
   G.scene.add(hemi, ambient, dirLight, dirLight.target);

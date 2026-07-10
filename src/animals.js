@@ -7,7 +7,7 @@ import { G, save } from './state.js';
 import { heightAt, slopeAt, WATER_Y, toonMat } from './terrain.js';
 import { fbm, hash2, clamp, lerp } from './noise.js';
 import { spawnSparkle, spawnHealBloom, makeGlow, addPickup, markSeen } from './world.js';
-import { preloadModels, propInstance } from './assets.js';
+import { preloadModels, propInstance, mergeRigidChildren } from './assets.js';
 
 const tmpV = new THREE.Vector3();
 const deer = [];
@@ -119,6 +119,8 @@ function upgradeDeerOne(d) {
           /Coat/.test(o.material.name || '')) o.material.color.multiplyScalar(0.82);
     });
   }
+  // bake each holder's rigid sub-meshes (antlers stay a node — does toggle)
+  for (const holder of [body, neck, ...legs]) mergeRigidChildren(holder, ['antlers']);
   d.g.clear();
   d.g.add(inner);
   d.neck = neck;

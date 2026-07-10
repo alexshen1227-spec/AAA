@@ -16,7 +16,7 @@ import {
   spawnSparkle, registerStandSurface, makePuzzleCrate, markSeen, makeChest,
 } from './world.js';
 import { mergeGeometries } from './BufferGeometryUtils.js';
-import { contractInstance, preloadModels } from './assets.js';
+import { contractInstance, preloadModels, mergeRigidChildren } from './assets.js';
 import { signalQuestEvent, setStoryFlag } from './quests.js';
 
 const GATES = [
@@ -626,6 +626,7 @@ function placeHeartProps() {
     if (i === 0) {
       const inst = contractInstance('ninth_pedestal');
       const root = inst ? inst.root : fallbackPedestal();
+      if (inst) mergeRigidChildren(root); // static: one draw per material
       root.position.set(px, HEART_Y, pz);
       root.rotation.y = a + Math.PI / 2;
       G.scene.add(root);
@@ -640,6 +641,7 @@ function placeHeartProps() {
     } else {
       const inst = contractInstance('warden_statue');
       const root = inst ? inst.root : fallbackStatue();
+      if (inst) mergeRigidChildren(root); // static: one draw per material
       root.position.set(px, HEART_Y, pz);
       root.rotation.y = a + Math.PI / 2; // each warden faces the empty seat's circle
       root.scale.setScalar(0.92 + (i % 3) * 0.05);

@@ -24,7 +24,9 @@ import { heightAt, WATER_Y, toonMat, toonGradient } from './terrain.js';
 import { hash2, clamp, lerp } from './noise.js';
 import { addPickup, spawnSparkle, makeGlow, markSeen } from './world.js';
 import { isNight } from './sky.js';
-import { preloadModels, instantiate, findClip, propInstance } from './assets.js';
+import {
+  preloadModels, instantiate, findClip, propInstance, mergeRigidChildren,
+} from './assets.js';
 
 const tmp1 = new THREE.Vector3(), tmp2 = new THREE.Vector3();
 const dummy = new THREE.Object3D(); // build-time matrix scratch
@@ -725,6 +727,9 @@ class Razorkite {
     const body = take('body'), head = take('head');
     const wingL = take('wingL'), wingR = take('wingR'), tail = take('tail');
     if (!body || !head || !wingL || !wingR || !tail) return; // keep procedural
+    for (const holder of [body, head, wingL, wingR, tail]) {
+      mergeRigidChildren(holder); // rigid sub-parts -> one draw per material
+    }
     this.group.clear();
     this.group.add(inner);
     this.body = body; this.headGrp = head;
@@ -1190,6 +1195,13 @@ class Boglin {
     }
     this.warpaint = inner.getObjectByName('warpaint');
     if (this.warpaint) this.warpaint.visible = false; // blood nights only
+
+    // Bake each animated holder's rigid sub-meshes together (a boglin ships
+    // as ~32 meshes; this brings it to ~8 draw calls with zero visual change).
+    // warpaint stays its own node — blood nights toggle its visibility.
+    for (const holder of [body, head, armL, armR, legL, legR]) {
+      mergeRigidChildren(holder, ['warpaint']);
+    }
 
     // strip the procedural body; the markers and health bar stay
     const keep = new Set([this.alertMark, this.qMark, this.bar]);
