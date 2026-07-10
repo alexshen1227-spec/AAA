@@ -47,6 +47,22 @@ const TRADER_OFFERS = Object.freeze([
     id: 'rumor_chimes', name: 'A high-country rumor', cost: 1, repeatable: false,
     detail: 'Sella has heard bronze singing above the cloud line.',
   },
+  // the storm ledger: some stock only exists in certain skies
+  {
+    id: 'storm_glass', name: 'A storm-glass bead', cost: 4, repeatable: true,
+    detail: 'Rain pressed hard enough to remember its lightning. Only sets in wet weather.',
+    when: () => G.weather && G.weather.wetness > 0.4,
+  },
+  {
+    id: 'crimson_ember', name: 'A crimson-night ember', cost: 2, repeatable: true,
+    detail: 'Nobody shops under a bleeding sky, so tonight it goes cheap. Warms to the bone.',
+    when: () => !!G.bloodNight,
+  },
+  {
+    id: 'rumor_squalls', name: 'A rumor of stray weather', cost: 1, repeatable: false,
+    detail: 'Sella has seen small storms walking the hills like lost sheep.',
+    when: () => !!(G.story && G.story.flags && G.story.flags.finaleCompleted),
+  },
 ]);
 
 const isObject = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -283,7 +299,9 @@ function buildTrader() {
 
 function availableOffers() {
   const flags = ensureWorldFlags().trader;
-  return TRADER_OFFERS.filter(offer => offer.repeatable || !flags.purchased[offer.id]);
+  return TRADER_OFFERS.filter(offer =>
+    (offer.repeatable || !flags.purchased[offer.id]) &&
+    (!offer.when || offer.when()));
 }
 
 function currentBrowseOffer() {
@@ -354,6 +372,18 @@ function applyOfferReward(id) {
     G.worldFlags.trader.rumors.chimes = true;
     dialog('SELLA VANE, ROAD-TINKER',
       'Three bronze rings crown three far summits. Reach one and the wind gives it a note. Reach all three and listen again at the cairn in the Heartfields.', false);
+  } else if (id === 'storm_glass') {
+    G.items.shard = (Number(G.items.shard) || 0) + 1;
+    discover('shard');
+    toast('The bead hums like far thunder — it will spend as a Star Shard.', 0xbfd8ff);
+  } else if (id === 'crimson_ember') {
+    G.hearts = G.maxHearts;
+    if (G.player) spawnHealBloom(G.player.pos.x, G.player.pos.y, G.player.pos.z);
+    toast('The ember\'s warmth pours through you — every heart refilled.', 0xffb6a3);
+  } else if (id === 'rumor_squalls') {
+    G.worldFlags.trader.rumors.squalls = true;
+    dialog('SELLA VANE, ROAD-TINKER',
+      'Since the big one went quiet, I have seen little storms walking the hills like lost sheep. There is a stone floating in each one\'s eye, and a mark on the stone. If you can reach it... well. Storms pay their debts.', false);
   } else return false;
   return true;
 }
@@ -365,6 +395,7 @@ export function getTraderOffers() {
     sold: !offer.repeatable && !!flags.purchased[offer.id],
     purchaseCount: Number(flags.purchaseCounts[offer.id]) || 0,
     affordable: (Number(G.gems) || 0) >= offer.cost,
+    available: !offer.when || !!offer.when(),
   }));
 }
 
@@ -377,6 +408,8 @@ export function buyTraderOffer(id) {
   if (!offer || purchaseBusy) return { ok: false, reason: offer ? 'busy' : 'unknown' };
   const flags = G.worldFlags.trader;
   if (!offer.repeatable && flags.purchased[id]) return { ok: false, reason: 'sold' };
+  // the sky changed while the quote stood — the ledger closes that page
+  if (offer.when && !offer.when()) return { ok: false, reason: 'weather' };
   if ((Number(G.gems) || 0) < offer.cost) return { ok: false, reason: 'gems', cost: offer.cost };
   const wallNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
   if (lastPurchase.id === id && wallNow - lastPurchase.at < 250) return { ok: false, reason: 'duplicate' };
