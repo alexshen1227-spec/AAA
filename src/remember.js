@@ -133,6 +133,8 @@ export const CHRONICLE = [
     text: 'The letters lie under the stones beneath the gold trees now. The feather charm turned all the while, like a route being planned. Delivered.' },
   { id: 'hartDone', title: 'The Pale Hart',
     text: 'At dawn a white hart waited, and did not run. It led the way old rivers lead — certain, unhurried — to a glade where a forgotten shrine woke for it. Not for you. That felt right.' },
+  { id: 'boglinShrine', title: 'The Moss-Kin Shrine',
+    text: 'Deep past the gold trees, the boglins ring a fallen sky-cog with totems and small offerings. They did not loot it; they knelt to it. Whatever broke the sky, the moss-kin remember it as a god falling — which means they remember it too.' },
 ];
 
 // ------------------------------------------------------------- module state

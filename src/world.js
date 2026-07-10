@@ -2475,6 +2475,7 @@ function dressWorld() {
     put('tree_autumn', x, z, r, 1.5, 0.15);
     G.colliders.push({ x, z, r: 0.8, top: heightAt(x, z) + 5 });
   }
+  buildDeepwood();
   // the ouroboros gate emblems on the old roads are owned by coil.js now —
   // they carry main-quest state (phase glow, attunement, the joined wind)
   // --- curated pack dressing (CC0 Kenney / Poly Pizza) ---------------------
@@ -2995,6 +2996,107 @@ export function updatePickups(dt) {
     m.count = counts[k];
     m.instanceMatrix.needsUpdate = true;
   }
+}
+
+// ---- the Thornwood Deepwood -------------------------------------------------
+// A darker grove beyond the gold trees: twisted pines pressing close, gloom
+// flora glowing between the roots, and at its heart the moss-kin's shrine —
+// a fallen sky-gear the boglins worship, ringed with crude totems. Quiet,
+// abandoned-holy; no fight here. A hollow tree nearby keeps an old cache.
+function buildDeepwood() {
+  const DW = { x: 124, z: 246 };
+  // the grove: a loose spiral of tall pines closing toward the heart
+  for (let i = 0; i < 26; i++) {
+    const a = i * 2.399963 + hash2(i, 4001) * 0.5;
+    const r = 7 + (i / 26) * 24;
+    const x = DW.x + Math.cos(a) * r, z = DW.z + Math.sin(a) * r;
+    const y = heightAt(x, z);
+    if (y < WATER_Y + 1) continue;
+    const m = propInstance('pk_pine_tall');
+    if (m) {
+      m.position.set(x, y - 0.06, z);
+      m.rotation.y = hash2(i, 4007) * Math.PI * 2;
+      m.scale.setScalar(1.4 + hash2(i, 4009) * 0.8);
+      G.scene.add(m);
+      G.colliders.push({ x, z, r: 0.7, top: y + 6 });
+    }
+  }
+  // gloom flora glows where the canopy is thickest
+  for (let i = 0; i < 10; i++) {
+    const a = hash2(i, 4013) * Math.PI * 2;
+    const r = 4 + hash2(i, 4019) * 20;
+    const ci = contractInstance('gloom_flora');
+    if (!ci) continue;
+    const x = DW.x + Math.cos(a) * r, z = DW.z + Math.sin(a) * r;
+    ci.root.position.set(x, heightAt(x, z), z);
+    ci.root.rotation.y = hash2(i, 4021) * Math.PI * 2;
+    ci.root.scale.setScalar(0.8 + hash2(i, 4027) * 0.5);
+    G.scene.add(ci.root);
+  }
+  // the shrine: a great fallen cog, half-buried where it landed
+  const gy = heightAt(DW.x, DW.z);
+  const cog = propInstance('gear');
+  if (cog) {
+    cog.position.set(DW.x, gy - 0.6, DW.z);
+    cog.rotation.set(0.5, 1.1, 0.35);
+    cog.scale.setScalar(7);
+    G.scene.add(cog);
+  }
+  G.colliders.push({ x: DW.x, z: DW.z, r: 1.6, top: gy + 1.4, soft: true });
+  // crude moss-kin totems face the cog
+  const wood = toonMat({ color: 0x5a4630 });
+  const bone = toonMat({ color: 0xd8d0bc });
+  const mossT = toonMat({ color: 0x5f8a4a });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.5;
+    const x = DW.x + Math.cos(a) * 3.6, z = DW.z + Math.sin(a) * 3.6;
+    const ty = heightAt(x, z);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 1.8, 6), wood);
+    pole.position.set(x, ty + 0.9, z);
+    pole.rotation.z = (hash2(i, 4031) - 0.5) * 0.25;
+    const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), bone);
+    skull.position.set(x, ty + 1.85, z);
+    const moss = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), mossT);
+    moss.position.set(x + 0.08, ty + 1.62, z + 0.06);
+    pole.castShadow = skull.castShadow = true;
+    G.scene.add(pole, skull, moss);
+    G.colliders.push({ x, z, r: 0.25, top: ty + 1.9 });
+  }
+  const glow = makeGlow(0x9fffc8, 2.2);
+  glow.position.set(DW.x, gy + 1.6, DW.z);
+  G.scene.add(glow);
+  G.interactables.push({
+    id: 'moss_kin_shrine', pos: new THREE.Vector3(DW.x, gy + 1, DW.z), r: 3.4,
+    label: 'Study the moss-kin shrine',
+    onUse() {
+      const first = !G.lore.boglinShrine;
+      if (first) { G.lore.boglinShrine = true; save(); }
+      G.ui.dialog('THE MOSS-KIN SHRINE',
+        'A great cog from the sky-works, half-buried where it fell — and the boglins have ringed it with totems and small offerings. They did not loot it. They KNELT to it. Whatever broke the sky, the moss-kin remember it as a god falling.', false);
+      if (first) {
+        G.ui.toast('✦ Chronicle — The Moss-Kin Shrine', 0xbfe8ff, 4600);
+        G.audio.sfx('glimmer');
+      } else {
+        G.audio.sfx('lock');
+      }
+    },
+  });
+  // the hollow tree: a fat dead trunk with a cache inside
+  const hx = DW.x - 14, hz = DW.z + 9;
+  const hy = heightAt(hx, hz);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.9, 7, 9), wood);
+  trunk.position.set(hx, hy + 3.5, hz);
+  trunk.castShadow = true;
+  const opening = new THREE.Mesh(
+    new THREE.CircleGeometry(0.9, 10),
+    new THREE.MeshBasicMaterial({ color: 0x120e0a }));
+  const oa = Math.atan2(DW.x - hx, DW.z - hz);
+  opening.position.set(hx + Math.sin(oa) * 1.72, hy + 1.1, hz + Math.cos(oa) * 1.72);
+  opening.rotation.y = oa;
+  G.scene.add(trunk, opening);
+  G.colliders.push({ x: hx, z: hz, r: 1.7, top: hy + 7 });
+  makeChest('chest.deepwood-hollow', hx + Math.sin(oa) * 2.6, hy, hz + Math.cos(oa) * 2.6,
+    oa + Math.PI, { kind: 'gems', n: 6 });
 }
 
 // Called after a validated save is applied. The world is intentionally built
