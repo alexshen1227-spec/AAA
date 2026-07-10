@@ -242,7 +242,7 @@ let mapOpen = false;        // full-map overlay open (owns the 'map' pause reaso
 function refreshPausedHint() {
   document.getElementById('paused-hint').style.display =
     (G.started && document.pointerLockElement !== canvas && !G.paused &&
-      !mapOpen && !(G.ui && G.ui.invOpen))
+      !G.cinematic && !mapOpen && !(G.ui && G.ui.invOpen))
       ? 'block' : 'none';
 }
 
