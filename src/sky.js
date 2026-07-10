@@ -122,6 +122,19 @@ const WEATHER_FADE = 8; // seconds to crossfade all visual params
 
 let wKind = 'clear';                                    // current (target) state
 let windHeading = 0.9;                                  // ambient wind direction (rad)
+
+// The Same Sky: the in-game moon keeps the player's real moon's phase.
+// 0 = new, 0.5 = full; fullness is 1 on a true full-moon night. Recomputed
+// hourly so a session crossing midnight stays honest. Never announced.
+let moonFullness = 0.5;
+let moonPhaseAt = 0;
+function refreshMoonPhase() {
+  const SYNODIC = 29.53058867 * 86400000;
+  const NEW_MOON_EPOCH = 947182440000; // 2000-01-06 18:14 UTC
+  const phase = (((Date.now() - NEW_MOON_EPOCH) % SYNODIC) + SYNODIC) % SYNODIC / SYNODIC;
+  moonFullness = 1 - Math.abs(phase - 0.5) * 2;
+  G.moonFullness = moonFullness;
+}
 const wPrev = Object.assign({}, WEATHER_PARAMS.clear);  // params fading from
 const wCur = Object.assign({}, WEATHER_PARAMS.clear);   // blended params, per frame
 let wBlend = 1;                                         // 0..1 crossfade progress
@@ -920,7 +933,11 @@ export function updateSky(dt) {
   G.sunDir.copy(_sunDir);
   sun.material.opacity = 1 - grim * 0.9; // heavy weather swallows the disc
   sun.visible = _sunDir.y > -0.12;
-  moon.material.opacity = 1 - grim * 0.85;
+  if (performance.now() > moonPhaseAt) {
+    moonPhaseAt = performance.now() + 3600000;
+    refreshMoonPhase();
+  }
+  moon.material.opacity = (1 - grim * 0.85) * (0.3 + 0.7 * moonFullness);
   moon.visible = _sunDir.y < 0.12;
 
   // warm halo + dome glow around a low sun at dawn and dusk (dimmed by weather)
@@ -984,10 +1001,10 @@ export function updateSky(dt) {
   }
 
   // ---- phase-4 sky life ----------------------------------------------------
-  // moon halo breathes on clear nights
+  // moon halo breathes on clear nights — fuller moons breathe brighter
   if (moonGlow) {
     moonGlow.material.opacity = 0.24 * night * (1 - grim * 0.85) *
-      (0.9 + Math.sin(G.time * 0.7) * 0.1);
+      (0.9 + Math.sin(G.time * 0.7) * 0.1) * (0.45 + 0.75 * moonFullness);
   }
   // deed-stars: kindled deeds fade in over ~3s and twinkle with the sky
   if (deedGroup) {

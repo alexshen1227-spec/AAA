@@ -986,7 +986,9 @@ function updateLanternStory(dt, night) {
   moonLines.visible = reveal;
   if (reveal) {
     const pulse = 0.82 + Math.sin(safeTime() * 1.7) * 0.18;
-    moonPath.material.opacity = 0.13 * pulse;
+    // on a true full-moon night — the player's real one — the road runs bright
+    const full = Number.isFinite(G.moonFullness) ? (0.75 + 0.6 * G.moonFullness) : 1;
+    moonPath.material.opacity = 0.13 * pulse * full;
     moonPath.material.color.setHex(G.bloodNight ? 0xffa09a : 0xcfe4ff);
     moonLines.material.opacity = 0.08 * pulse;
     moonPath.rotation.z = Math.sin(safeTime() * 0.22) * 0.025;
