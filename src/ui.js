@@ -8,6 +8,7 @@ import { spawnHealBloom } from './world.js';
 import { clamp } from './noise.js';
 import { CHRONICLE, DEEDS } from './remember.js';
 import { getActiveObjective, getQuestLog, setActiveQuest } from './quests.js';
+import { getJournal } from './journal.js';
 
 const WX_GLYPH = { clear: '☀', breeze: '🍃', overcast: '☁', rain: '☔', storm: '⚡' };
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
@@ -835,7 +836,7 @@ export class UI {
     this.invGems.textContent = '💠 ' + G.gems;
     // tabs
     this.invTabs.innerHTML = '';
-    for (const tab of ['materials', 'gear', 'log', 'chronicle', 'deeds']) {
+    for (const tab of ['materials', 'gear', 'log', 'journal', 'chronicle', 'deeds']) {
       const b = document.createElement('div');
       const on = this.invTab === tab;
       b.textContent = tab.toUpperCase();
@@ -879,6 +880,28 @@ export class UI {
         '<div style="margin-top:95px;color:#9a8f74;font-family:Georgia;font-size:13px;line-height:1.65">' +
         'Select an unfinished quest to track it.<br><br>The gold diamond appears on the compass, minimap, and charted map. ' +
         'Some mysteries must still be followed by ear, weather, or memory.</div>';
+      return;
+    }
+    // the Wanderer's Journal: the wayfarer's own diary, written a line at a time
+    if (this.invTab === 'journal') {
+      const pages = getJournal();
+      let html = '<div style="grid-column:1/-1;height:363px;overflow-y:auto;padding-right:5px">' +
+        '<div style="font-family:Georgia;font-size:12px;color:#9a8f74;padding:2px 4px 12px;font-style:italic">' +
+        'A journal I do not remember starting.</div>';
+      if (!pages.length) {
+        html += '<div style="font-family:Georgia;font-size:13px;color:#5f5843;font-style:italic;padding:8px 4px">' +
+          'The pages are blank. Give them something to remember.</div>';
+      }
+      for (const pg of pages) {
+        html += '<div style="padding:9px 4px;border-bottom:1px solid rgba(226,203,141,.13)">' +
+          `<div style="font-size:11px;letter-spacing:2px;color:#9a8f74;font-family:Cinzel,Georgia">DAY ${pg.day + 1}</div>` +
+          `<div style="font-size:13.5px;color:#d8ccac;font-family:Georgia;line-height:1.55;margin-top:3px">${pg.text}</div></div>`;
+      }
+      this.invGrid.innerHTML = html + '</div>';
+      this.invDetail.innerHTML =
+        '<div style="margin-top:120px;color:#9a8f74;font-family:Georgia;font-size:13px;line-height:1.65">' +
+        'It fills itself, a line at a time, whether I mean it to or not.<br><br>' +
+        'The hand is mine. I am fairly sure the hand is mine.</div>';
       return;
     }
     // the Chronicle: every fragment of the valley's memory found so far

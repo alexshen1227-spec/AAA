@@ -75,6 +75,7 @@ export const G = {
   regionsSeen: {},   // {regionName: true} — first-entry title cards
   quests: emptyQuests(),
   story: emptyStory(),
+  journal: [],       // [{d, id}] — the wayfarer's own diary, auto-written silently
   // Stable one-shot world progress. Values are sparse {stableId: true} maps.
   worldState: emptyWorldState(),
 
@@ -259,6 +260,10 @@ function normalizeSave(raw) {
     quests,
     story,
     worldState,
+    journal: Array.isArray(raw.journal)
+      ? raw.journal.filter(e => e && typeof e.id === 'string').slice(0, 300)
+        .map(e => ({ d: finiteNumber(e.d, 0, 0, 1e6, true), id: e.id }))
+      : [],
     arrows: finiteNumber(raw.arrows, 20, 0, 999, true),
     time: finiteNumber(raw.time, 0, 0, 1e9),
     dayTime: finiteNumber(raw.dayTime, 0.3, 0, 0.999999),
@@ -286,6 +291,7 @@ export function save() {
       lore: G.lore, deeds: G.deeds, regionsSeen: G.regionsSeen,
       quests: G.quests, story: G.story,
       worldState: G.worldState,
+      journal: G.journal,
       arrows: G.player ? G.player.arrows : 20,
       time: G.time, dayTime: G.dayTime, dayCount: G.dayCount,
       lastCrimsonNight: G.lastCrimsonNight,

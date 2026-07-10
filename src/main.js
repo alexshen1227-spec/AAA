@@ -33,6 +33,7 @@ import { updateVigil } from './vigil.js';
 import { updateEmberside } from './emberside.js';
 import { updateScarf } from './scarf.js';
 import { updateSimmerpot } from './simmerpot.js';
+import { updateJournal } from './journal.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -153,6 +154,7 @@ function applySave(s) {
   if (s.quests) G.quests = s.quests;
   if (s.story) G.story = s.story;
   if (s.worldState) G.worldState = s.worldState;
+  if (Array.isArray(s.journal)) G.journal = s.journal;
   if (s.settings) Object.assign(G.settings, s.settings);
   if (s.arrows !== undefined) G.player.arrows = s.arrows;
   syncWorldProgress();
@@ -539,6 +541,7 @@ function step(dt, now) {
     if (!G.gameOver) updateEmberside(wdt);
     if (!G.gameOver) updateSimmerpot(wdt);
     if (!G.gameOver) updateQuests(dt);
+    if (!G.gameOver && frame % 30 === 0) updateJournal();
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();
     if (frame % 3 === 0) updatePrompt();
