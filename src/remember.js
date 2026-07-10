@@ -134,6 +134,8 @@ export const CHRONICLE = [
     text: 'The letters lie under the stones beneath the gold trees now. The feather charm turned all the while, like a route being planned. Delivered.' },
   { id: 'hartDone', title: 'The Pale Hart',
     text: 'At dawn a white hart waited, and did not run. It led the way old rivers lead — certain, unhurried — to a glade where a forgotten shrine woke for it. Not for you. That felt right.' },
+  { id: 'giantsPalm', title: 'The Giant\'s Palm',
+    text: 'The construct\'s open hand lifted you the way you would lift a ladybird — with a care so large it felt like weather. From its shoulder the whole kept valley lay below, and the golem held very still, the way the huge do around the small they love.' },
   { id: 'sixthVigil', title: 'The Sixth\'s Vigil',
     text: 'Five crystal tones held together through one cold night, and her echo sang with them at the great crystal. The song was never for the crystals. It was for whoever had to keep them next.' },
   { id: 'driftNote', title: 'The Road Between',

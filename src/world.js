@@ -2526,13 +2526,24 @@ function dressWorld() {
     const ci = put('construct_golem', x, z, ry, 1.15);
     if (!ci) continue;
     G.colliders.push({ x, z, r: 1.2, top: heightAt(x, z) + 2.6 });
-    golems.push({ root: ci.root, ph: hash2(x | 0, z | 0) * 9,
+    const rec = { root: ci.root, ph: hash2(x | 0, z | 0) * 9,
       // energy seams kindle tier by tier as gear is offered (recolor in updateGolems)
       energyMats: (ci.mats.EnergyAmber || []).concat(ci.mats.EnergyGreen || []),
       appliedTier: -1,
+      palm: ci.root.getObjectByName('palm') || null,
       parts: ['Head', 'Torso', 'ArmL', 'ArmR', 'ShoulderL', 'ShoulderR']
         .map(n => ci.root.getObjectByName(n)).filter(Boolean)
-        .map(o => ({ o, y: o.position.y })) });
+        .map(o => ({ o, y: o.position.y })) };
+    golems.push(rec);
+    // the east golem's open palm becomes a perch once the valley is kept
+    if (x === 106 && rec.palm) {
+      rec.palm.getWorldPosition(tmpV);
+      G.interactables.push({
+        id: 'giants_palm', pos: tmpV.clone(), r: 2.8,
+        label: 'Step into the open palm',
+        onUse() { beginPalmRide(rec); },
+      });
+    }
   }
 }
 
@@ -2587,9 +2598,66 @@ const TIER_SEAMS = [
   { color: 0xaee8da, emissive: 0x3fb8c0 },
   { color: 0x9feaff, emissive: 0x54e8ff },
 ];
+// the giant's palm: once the storm is stilled, the east golem's open hand
+// becomes a perch — step in, and it lifts you, slowly, to see the valley
+// you saved. Any movement asks to be put down; the arm eases back after.
+let palmRide = null; // {g, k, dir} — dir 1 rising/holding, -1 easing back
+
+function beginPalmRide(g) {
+  if (!(G.story && G.story.flags && G.story.flags.finaleCompleted)) {
+    G.ui.dialog('THE OPEN PALM',
+      'The great hand lies open, patient as stone. It is waiting for the valley to be finished first.', false);
+    G.audio.sfx('lock');
+    return;
+  }
+  if (palmRide) return;
+  palmRide = { g, k: 0, dir: 1 };
+  if (!G.lore.giantsPalm) {
+    G.lore.giantsPalm = true;
+    G.ui.toast('✦ Chronicle — The Giant\'s Palm', 0xbfe8ff, 4200);
+    save();
+  }
+  G.audio.sfx('grab');
+  G.camShake += 0.15;
+}
+
+function updatePalmRide() {
+  if (!palmRide) return;
+  const { g } = palmRide;
+  const armPart = g.parts.find(pt => pt.o.name === 'ArmR');
+  if (!armPart || !g.palm) { palmRide = null; return; }
+  const dt = 1 / 60; // updateGolems runs per sim frame
+  palmRide.k = Math.max(0, Math.min(1, palmRide.k + palmRide.dir * dt / 6));
+  const e = palmRide.k * palmRide.k * (3 - 2 * palmRide.k);
+  armPart.lift = e * 1.7; // read by the bob write below
+  if (palmRide.dir === 1) {
+    // the rider stands in the hand
+    g.palm.getWorldPosition(tmpV);
+    G.player.pos.set(tmpV.x, tmpV.y + 0.35, tmpV.z);
+    G.player.vel.set(0, 0, 0);
+    G.player.mode = 'ground';
+    // any input is an ask to be put down — or step off at the top
+    const k = G.keys;
+    if (k['KeyW'] || k['KeyA'] || k['KeyS'] || k['KeyD'] || k['Space']) {
+      palmRide.dir = -1;
+      if (palmRide.k > 0.9) {
+        // stepping off at the top: a small parting hop
+        G.player.vel.y = 3.5;
+        G.player.mode = 'air';
+        palmRide = { g, k: palmRide.k, dir: -1, riderless: true };
+      }
+    }
+  }
+  if (palmRide.dir === -1 && palmRide.k <= 0) {
+    armPart.lift = 0;
+    palmRide = null;
+  }
+}
+
 export function updateGolems() {
   const p = G.player ? G.player.pos : null;
   const tier = equipTier();
+  updatePalmRide();
   for (const g of golems) {
     // seams kindle as gear is forged; idempotent, so save-loads recolor too
     if (g.appliedTier !== tier) {
@@ -2603,7 +2671,8 @@ export function updateGolems() {
     const bobMul = 1 + tier * 0.5; // a waking golem breathes deeper
     for (let i = 0; i < g.parts.length; i++) {
       const pt = g.parts[i];
-      pt.o.position.y = pt.y + Math.sin(G.time * 0.9 + g.ph + i * 1.3) * 0.035 * bobMul;
+      pt.o.position.y = pt.y + Math.sin(G.time * 0.9 + g.ph + i * 1.3) * 0.035 * bobMul +
+        (pt.lift || 0);
     }
     if (!p) continue;
     const d = Math.hypot(p.x - g.root.position.x, p.z - g.root.position.z);

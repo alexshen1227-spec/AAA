@@ -60,6 +60,9 @@ Object.assign(MODELS, {
   deer: 'assets/models/blender/deer.glb',
   // the gloamhound: a spectral stalker (shape only; materials become ghost-light)
   gloamhound: 'assets/models/blender/gloamhound.glb',
+  // true relic icons for the satchel
+  skysong_fork: 'assets/models/blender/skysong_fork.glb',
+  warden_sigil: 'assets/models/blender/warden_sigil.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',
