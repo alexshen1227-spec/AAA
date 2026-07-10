@@ -262,7 +262,11 @@ function normalizeSave(raw) {
     worldState,
     journal: Array.isArray(raw.journal)
       ? raw.journal.filter(e => e && typeof e.id === 'string').slice(0, 300)
-        .map(e => ({ d: finiteNumber(e.d, 0, 0, 1e6, true), id: e.id }))
+        .map(e => {
+          const out = { d: finiteNumber(e.d, 0, 0, 1e6, true), id: e.id };
+          if (e.id === 'pc' && typeof e.text === 'string') out.text = e.text.slice(0, 300);
+          return out;
+        })
       : [],
     arrows: finiteNumber(raw.arrows, 20, 0, 999, true),
     time: finiteNumber(raw.time, 0, 0, 1e9),

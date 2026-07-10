@@ -36,6 +36,7 @@ import { updateSimmerpot } from './simmerpot.js';
 import { updateJournal } from './journal.js';
 import { updateGubbin } from './gubbin.js';
 import { buildTumbledVale } from './tumbledvale.js';
+import { togglePostcard, cancelPostcard, updatePostcard } from './postcard.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -190,7 +191,9 @@ window.addEventListener('keydown', (e) => {
       if (mapOpen) toggleMap();
       G.ui.toggleInventory();
       break;
+    case 'KeyC': togglePostcard(); break;
     case 'Escape':
+      if (cancelPostcard()) break;
       if (G.ui.invOpen) G.ui.toggleInventory();
       else if (mapOpen) toggleMap();
       break;
@@ -544,6 +547,7 @@ function step(dt, now) {
     if (!G.gameOver) updateEmberside(wdt);
     if (!G.gameOver) updateSimmerpot(wdt);
     if (!G.gameOver) updateGubbin(wdt);
+    if (!G.gameOver) updatePostcard();
     if (!G.gameOver) updateQuests(dt);
     if (!G.gameOver && frame % 30 === 0) updateJournal();
     if (frame % 19 === 0) updateRegion();

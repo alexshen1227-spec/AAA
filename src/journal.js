@@ -88,11 +88,20 @@ export function updateJournal() {
   if (wrote) { try { save(); } catch (e) { /* best effort */ } }
 }
 
+// Postcards write a free-text line the beats don't cover: "stood a while at
+// [place]". Stored with id 'pc' and the line carried on the entry itself.
+export function addPostcard(place) {
+  const entries = logged();
+  const text = `Stood a while at ${place}. Nothing happened. I wanted to remember it anyway.`;
+  entries.push({ d: Number.isFinite(G.dayCount) ? G.dayCount : 0, id: 'pc', text });
+  try { save(); } catch (e) { /* best effort */ }
+}
+
 // for ui.js: the written pages, in the order they were written
 export function getJournal() {
   const byId = {};
   for (const b of BEATS) byId[b.id] = b.text;
   return logged()
-    .filter(e => byId[e.id])
-    .map(e => ({ day: e.d, text: byId[e.id] }));
+    .filter(e => e.id === 'pc' ? typeof e.text === 'string' : byId[e.id])
+    .map(e => ({ day: e.d, text: e.id === 'pc' ? e.text : byId[e.id] }));
 }
