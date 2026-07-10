@@ -28,6 +28,7 @@ import { updateSquall } from './squall.js';
 import { updateHearths } from './hearth.js';
 import { updateGloamhounds } from './gloamhound.js';
 import { updateUnderMere } from './undermere.js';
+import { updateDrift } from './drift.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -520,6 +521,7 @@ function step(dt, now) {
     if (!G.gameOver) updateHearths(dt);
     if (!G.gameOver) updateGloamhounds(dt);
     if (!G.gameOver) updateUnderMere(dt);
+    if (!G.gameOver) updateDrift(dt);
     if (!G.gameOver) updateQuests(dt);
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();

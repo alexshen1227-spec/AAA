@@ -121,6 +121,7 @@ export const DEEDS = [
   { id: 'skyhigh', verse: 'Above the Clouds', hint: 'Stand where only birds have stood.' },
   { id: 'mirror', verse: "The Mirror's Guest", hint: 'Swim the Mirrormere by moonlight.' },
   { id: 'echoes', verse: 'The Eight Names', hint: "Stand with every warden's echo." },
+  { id: 'crossing', verse: 'The Long Crossing', hint: 'Walk the sky-road to its last isle.' },
 ];
 
 // Chronicle page order: the stones' story, then the echoes, then Piet.
@@ -133,6 +134,8 @@ export const CHRONICLE = [
     text: 'The letters lie under the stones beneath the gold trees now. The feather charm turned all the while, like a route being planned. Delivered.' },
   { id: 'hartDone', title: 'The Pale Hart',
     text: 'At dawn a white hart waited, and did not run. It led the way old rivers lead — certain, unhurried — to a glade where a forgotten shrine woke for it. Not for you. That felt right.' },
+  { id: 'driftNote', title: 'The Road Between',
+    text: '"THE ROAD IS NOT THE ISLES. THE ROAD IS THE LETTING GO BETWEEN THEM." And beneath, in a courier\'s quick hand: "piet was here. twice. the second time on purpose."' },
   { id: 'undermere1', title: 'The Under-Mere · Unsent — to the First',
     text: '"I charted my whole life by you and called it geography. Some debts are better kept lit." — found in Maerwen\'s drowned workshop, in a drawer that opened like a held breath.' },
   { id: 'undermere2', title: 'The Under-Mere · Unsent — to the Fifth',
@@ -711,6 +714,7 @@ const DEED_CHECKS = {
     for (let i = 0; i < 8; i++) if (!f['wardenMet_' + i]) return false;
     return true;
   },
+  crossing: () => !!(G.story && G.story.flags && G.story.flags.driftCrossed),
 };
 
 function syncStars() {
