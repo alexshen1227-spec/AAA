@@ -31,6 +31,7 @@ import { updateUnderMere } from './undermere.js';
 import { updateDrift } from './drift.js';
 import { updateVigil } from './vigil.js';
 import { updateEmberside } from './emberside.js';
+import { updateScarf } from './scarf.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -498,6 +499,7 @@ function step(dt, now) {
   if (G.started && !G.gameOver) {
     G.time += wdt;
     G.player.update(dt);
+    updateScarf(dt); // real dt: the scarf lives on the player's clock
     recoverOutOfWorld();
   }
 
