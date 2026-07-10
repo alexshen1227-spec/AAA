@@ -827,3 +827,16 @@ A quiet play-clock and deed tally: the pause panel shows elapsed time, and the c
 - Feasibility (10): Two counters in the save plus extending the existing gameover-beacons stats pattern — the cheapest idea on the list.
 - Identity (2): A speedrun clock and stats card is meta scaffolding with zero bearing on the world's tone or mystery.
 
+
+---
+
+## In-flight: The Coiled Storm (finale drop, judge-vetted July 9 2026)
+
+Spec agreed with design-judge pass (verdicts A/B SHIP, C/D REWORK applied, E SHIP with cut):
+
+- **Storm at (0,360)**, manifests only when `coilCompleted && !finaleCompleted`; rebuilt from flags on load. Layered translucent cones/discs (depthWrite off, distance-faded to 2 layers), dark ground shaft, local lightning. Visible map-wide.
+- **Approach (r<90)**: forced storm via a new sky.js `requestWeather(kind)` lock (no stacked multipliers — single lock, released on exit); radial-out headwind scaling toward the wall, zero in the eye (r 12). One **lull shrine** checkpoint (~0,315): still-air bubble, sets respawn. Two rousable vents give forward hops. Cap the slog: full approach ~90s.
+- **Eye**: dead-still air, fall speed capped at -8 ("the storm holds its breath" — no fall deaths, judge's rage-prevention rework). Spiral of 4 updraft columns (ground→35, 30→60, 55→85, 80→110) at 90° intervals, r 8. Optional 2 razorkites if the spawn API is trivial.
+- **Heart (y~105)**: standing disc; orbiting sky-debris ring around a dark core; socket takes the Warden's Sigil (consumed). Socketing does NOT still the storm — it **ignites a final ouroboros ring**; the player must glide one full circuit (angular accumulation ≥ 2π in the r 8–22 band, storm's own tangential wind assists) to close the loop. The ouroboros eats its tail; then the stilling.
+- **Stilling (~20s)**: rotation lerps to 0, layers peel upward and fade, weather lock → clear, chord resolves major; map-wide sky_debris meshes (names Debris_*) glow amber ~8s (emissive tint on existing instances, no new FX). `finale_completed`; storm swaps for a small serene sky-isle (grass disc + young tree). All idempotent from flags.
+- **Credits "The Wind Remembers"** (NO "your name" text — the star is the name): letterboxed drift over spawn meadow → first beacon → Mirrormere → the Coil; ≤5 stat lines (days, beacons, glimmers, letters, deeds); ends on the night sky, one new brightest star kindles, then the three words. Space skips. Replayable by interacting at the serene isle. Triggered ~6s after the stilling.

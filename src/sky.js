@@ -155,15 +155,31 @@ function startWeather(next) {
   wBlend = 0;
 }
 
+// External weather lock (the finale storm). While locked, the dwell roll is
+// suspended and the sky holds the requested state; pass null to release.
+// A single lock slot — re-requesting the same kind is a no-op, so entering
+// and leaving the caller's trigger radius repeatedly cannot stack anything.
+let weatherLock = null;
+export function requestWeather(kind) {
+  if (kind === null) { weatherLock = null; return; }
+  if (!WEATHER_PARAMS[kind]) return;
+  weatherLock = kind;
+  if (wKind !== kind) startWeather(kind);
+}
+
 function updateWeather(dt) {
-  wDwell -= dt;
-  if (wDwell <= 0) {
-    wDwell = 60 + Math.random() * 120;
-    let next = pickNextWeather();
-    if (next === 'storm' && G.bloodNight) next = 'rain'; // no storms under the crimson moon
-    if (next !== wKind) startWeather(next);
+  if (weatherLock) {
+    if (wKind !== weatherLock) startWeather(weatherLock);
+  } else {
+    wDwell -= dt;
+    if (wDwell <= 0) {
+      wDwell = 60 + Math.random() * 120;
+      let next = pickNextWeather();
+      if (next === 'storm' && G.bloodNight) next = 'rain'; // no storms under the crimson moon
+      if (next !== wKind) startWeather(next);
+    }
   }
-  if (G.bloodNight && wKind === 'storm') startWeather('rain');
+  if (G.bloodNight && wKind === 'storm' && !weatherLock) startWeather('rain');
   if (wBlend < 1) wBlend = Math.min(1, wBlend + dt / WEATHER_FADE);
   const tgt = WEATHER_PARAMS[wKind];
   for (let i = 0; i < WEATHER_FIELDS.length; i++) {
