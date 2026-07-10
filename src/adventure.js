@@ -764,13 +764,55 @@ function upgradeAuthoredProps() {
       chimeCairn.modelHolder.add(instance.root);
     }
   }
+  upgradeNpcModels();
+}
+
+// Swap the procedural placeholder people for their authored Blender selves.
+// The GLBs carry the same animation contract (ArmL/ArmR/LegL/LegR pivots,
+// Sella's Pack, Ilyra's Staff), so the walk and idle code drives them as-is.
+function upgradeNpcModels() {
+  if (trader) {
+    const inst = contractInstance('sella_vane');
+    if (inst) {
+      const get = name => inst.root.getObjectByName(name);
+      const armL = get('ArmL'), armR = get('ArmR');
+      const legL = get('LegL'), legR = get('LegR');
+      const pack = get('Pack');
+      if (armL && armR && legL && legR && pack) {
+        inst.root.rotation.order = 'YXZ';
+        inst.root.position.copy(trader.root.position);
+        inst.root.rotation.y = trader.yaw;
+        const lampGlow = makeGlow(0xffc45c, 1.15);
+        lampGlow.position.set(0.53, 1.6, 0.2); // the pack's hanging lamp
+        inst.root.add(lampGlow);
+        G.scene.remove(trader.root);
+        G.scene.add(inst.root);
+        Object.assign(trader, { root: inst.root, armL, armR, legL, legR, pack, lampGlow });
+        trader.interactable.pos = inst.root.position; // the prompt follows her walk
+      }
+    }
+  }
+  if (lanternKeeper) {
+    const inst = contractInstance('ilyra_fen');
+    if (inst) {
+      inst.root.position.copy(lanternKeeper.root.position);
+      inst.root.rotation.y = lanternKeeper.root.rotation.y;
+      const glow = makeGlow(0xcfe8ff, 1.45);
+      glow.position.set(0.5, 2.22, -0.05); // her staff-lantern
+      inst.root.add(glow);
+      G.scene.remove(lanternKeeper.root);
+      G.scene.add(inst.root);
+      Object.assign(lanternKeeper, { root: inst.root, glow });
+    }
+  }
 }
 
 function buildChimes() {
   const points = findSummits(CHIME_IDS.length);
   points.forEach((point, index) => buildSummitChime(CHIME_IDS[index], point, index));
   buildChimeCairn();
-  preloadModels(['ouroboros_ring', 'cairn']).then(upgradeAuthoredProps).catch(() => { });
+  preloadModels(['ouroboros_ring', 'cairn', 'sella_vane', 'ilyra_fen'])
+    .then(upgradeAuthoredProps).catch(() => { });
 }
 
 function hydrateFlagsFromQuestState() {

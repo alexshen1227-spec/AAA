@@ -50,6 +50,9 @@ Object.assign(MODELS, {
   // The Coil: the eight warden statues and the empty ninth pedestal
   warden_statue: 'assets/models/blender/warden_statue.glb',
   ninth_pedestal: 'assets/models/blender/ninth_pedestal.glb',
+  // the valley's people: the road-tinker and the lanternkeeper
+  sella_vane: 'assets/models/blender/sella_vane.glb',
+  ilyra_fen: 'assets/models/blender/ilyra_fen.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',
