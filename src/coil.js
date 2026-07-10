@@ -129,7 +129,7 @@ function buildGate(rec, instance) {
   });
 
   G.interactables.push({
-    id: rec.id, pos: new THREE.Vector3(rec.x, apertureY, rec.z), r: 3.6,
+    id: rec.id, pos: new THREE.Vector3(rec.x, groundY + 1.4, rec.z), r: 3.6,
     label: 'Listen to the ouroboros gate',
     onUse() { murmur(rec); },
   });
