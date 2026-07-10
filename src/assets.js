@@ -56,6 +56,8 @@ Object.assign(MODELS, {
   // ...and the meadow folk who started it all
   maren_wayfarer: 'assets/models/blender/maren_wayfarer.glb',
   tilla_gleaner: 'assets/models/blender/tilla_gleaner.glb',
+  // Windwise Wilds: the herd's authored body (antlers node toggles bucks)
+  deer: 'assets/models/blender/deer.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',

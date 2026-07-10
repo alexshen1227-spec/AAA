@@ -81,12 +81,48 @@ function buildDeer(x, z, buck, seed) {
   g.position.set(x, y, z);
   G.scene.add(g);
   return {
-    g, neck, legs, home: new THREE.Vector2(x, z),
+    g, neck, legs, buck, home: new THREE.Vector2(x, z),
     pos: new THREE.Vector3(x, y, z),
     yaw: hash2(seed, 3) * Math.PI * 2,
     state: 'graze', stateT: hash2(seed, 5) * 4, fleeT: 0,
     tx: x, tz: z, ph: hash2(seed, 7) * 10,
   };
+}
+
+// deer.glb follows the pale-hart node contract (body/neck/legFL..legBR facing
+// -Z, plus an antlers node inside neck that only bucks keep). Same holder-
+// group pivot wrap; the walk/gallop/graze code drives the swapped parts as-is.
+function upgradeDeerOne(d) {
+  const root = propInstance('deer');
+  if (!root) return;
+  const inner = new THREE.Group();
+  inner.rotation.y = -Math.PI / 2;
+  const take = (name) => {
+    const node = root.getObjectByName(name);
+    if (!node) return null;
+    const holder = new THREE.Group();
+    holder.position.copy(node.position);
+    node.position.set(0, 0, 0);
+    holder.add(node);
+    inner.add(holder);
+    return holder;
+  };
+  const body = take('body'), neck = take('neck');
+  const legs = [take('legFL'), take('legFR'), take('legBL'), take('legBR')];
+  if (!body || !neck || legs.some(l => !l)) return; // keep the procedural herd
+  const antlers = neck.getObjectByName('antlers');
+  if (antlers) antlers.visible = !!d.buck;
+  if (d.buck) {
+    // bucks wear the darker coat, as before
+    inner.traverse(o => {
+      if (o.isMesh && o.material && o.material.color &&
+          /Coat/.test(o.material.name || '')) o.material.color.multiplyScalar(0.82);
+    });
+  }
+  d.g.clear();
+  d.g.add(inner);
+  d.neck = neck;
+  d.legs = legs;
 }
 
 // deer/rabbit shared: walk with terrain + water avoidance
@@ -472,6 +508,10 @@ export function buildAnimals() {
   // the pale hart's GLB body swaps in whenever it loads
   preloadModels(['pale_hart']).then(res => {
     if (res && res.pale_hart && hart) upgradeHart();
+  }).catch(() => { });
+  // ...and the herd follows suit
+  preloadModels(['deer']).then(res => {
+    if (res && res.deer) for (const d of deer) upgradeDeerOne(d);
   }).catch(() => { });
   // fish: sleek dark shapes circling under the Mirrormere
   fishMesh = new THREE.InstancedMesh(
