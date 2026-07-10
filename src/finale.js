@@ -41,6 +41,9 @@ const circuit = { lastA: null, acc: 0 };
 const stilling = { on: false, t: 0 };
 const credits = { on: false, t: 0, shot: -1, el: null, prevSkip: false, queuedAt: 0 };
 let ninthStar = null;
+let starBeam = null;      // the star's faint lean toward something unfound
+let starBeamNextAt = 0;
+let starBeamTarget = null;
 
 const stormActive = () => flag('coilCompleted') && !flag('finaleCompleted');
 
@@ -646,8 +649,54 @@ export function updateFinale(dt = 0) {
     // faint but findable on any clear night, forever
     const night = G.dayTime < 0.21 || G.dayTime > 0.79;
     ninthStar.material.opacity = night ? 0.85 : 0;
+    updateStarBeam(night);
   }
   updateCredits(step);
+}
+
+// The Ninth Star Points: on clear nights the star leans a faint beam toward
+// the nearest thing still unfound — the valley remembering its warden back.
+// No UI, no text; wordless post-game wander fuel.
+function nearestUnfound() {
+  const p = G.player.pos;
+  let best = null, bestD = Infinity;
+  for (const it of G.interactables) {
+    if (it.gone || !it.pos) continue;
+    if (it.label !== 'Open chest' && it.label !== 'Feel the high wind' &&
+        it.label !== 'Stand in the sky') continue;
+    const d = (it.pos.x - p.x) ** 2 + (it.pos.z - p.z) ** 2;
+    if (d < bestD) { bestD = d; best = it; }
+  }
+  return best;
+}
+
+function updateStarBeam(night) {
+  const grim = G.weather ? (G.weather.grim || 0) : 0;
+  const shouldShow = night && grim < 0.35 && !!flag('finaleCompleted');
+  if (!starBeam) {
+    if (!shouldShow) return;
+    starBeam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.4, 3.2, 130, 6, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xfff2d8, transparent: true, opacity: 0, fog: false,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      }));
+    G.scene.add(starBeam);
+  }
+  if (!shouldShow) { starBeam.material.opacity = 0; return; }
+  if (G.time > starBeamNextAt) {
+    starBeamNextAt = G.time + 8; // re-aim occasionally, not per frame
+    starBeamTarget = nearestUnfound();
+  }
+  if (!starBeamTarget || starBeamTarget.gone) { starBeam.material.opacity = 0; return; }
+  const from = ninthStar.position;
+  const to = starBeamTarget.pos;
+  // a short lean out of the star, pointing the way — not a map marker
+  const dir = new THREE.Vector3(to.x - from.x, to.y - from.y, to.z - from.z).normalize();
+  starBeam.position.set(
+    from.x + dir.x * 70, from.y + dir.y * 70, from.z + dir.z * 70);
+  starBeam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+  starBeam.material.opacity = 0.10 + Math.sin(G.time * 0.9) * 0.035;
 }
 
 export function getFinaleSummary() {
