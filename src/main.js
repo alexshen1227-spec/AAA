@@ -32,6 +32,7 @@ import { updateDrift } from './drift.js';
 import { updateVigil } from './vigil.js';
 import { updateEmberside } from './emberside.js';
 import { updateScarf } from './scarf.js';
+import { updateSimmerpot } from './simmerpot.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -536,6 +537,7 @@ function step(dt, now) {
     if (!G.gameOver) updateDrift(wdt);
     if (!G.gameOver) updateVigil(wdt);
     if (!G.gameOver) updateEmberside(wdt);
+    if (!G.gameOver) updateSimmerpot(wdt);
     if (!G.gameOver) updateQuests(dt);
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();

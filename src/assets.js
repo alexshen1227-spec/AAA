@@ -65,6 +65,11 @@ Object.assign(MODELS, {
   warden_sigil: 'assets/models/blender/warden_sigil.glb',
   // one door, three thresholds: both vaults and the Under-Mere
   warden_door: 'assets/models/blender/warden_door.glb',
+  // the simmerpot set: the pot and the three forages that feed it
+  simmerpot: 'assets/models/blender/simmerpot.glb',
+  bramble_berries: 'assets/models/blender/bramble_berries.glb',
+  stormcap: 'assets/models/blender/stormcap.glb',
+  reed_heart: 'assets/models/blender/reed_heart.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',

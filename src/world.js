@@ -18,6 +18,9 @@ export const ITEM_DEFS = {
   sigil: { name: 'The Warden\'s Sigil', tint: 0x9fffc8, note: 'the ninth pedestal\'s answer' },
   fork: { name: 'The Skysong Fork', tint: 0x9fe8d8, note: 'strike it, and the unfound answer' },
   hushbell: { name: 'The Hush Bell', tint: 0xd8d2ff, note: 'the world slows; you do not' },
+  berry: { name: 'Bramble-Berries', tint: 0xb0303a, note: 'sharp-sweet; the pot loves them' },
+  stormcap: { name: 'Stormcap', tint: 0x8a9cb8, note: 'fruits only after honest rain' },
+  reedheart: { name: 'Reed-Heart', tint: 0xf0ecd0, note: 'the pale sweet core of a river reed' },
 };
 
 export function markSeen(kind) {

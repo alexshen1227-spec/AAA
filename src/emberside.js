@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { G } from './state.js';
 import { heightAt, toonMat } from './terrain.js';
+import { setStoryFlag } from './quests.js';
 
 const GATHERINGS = [
   {
@@ -129,6 +130,10 @@ function updateOne(state, dt) {
     root.position.set(state.seatPos.x, ground - 0.32, state.seatPos.z);
     root.rotation.y = Math.atan2(h.x - state.seatPos.x, h.z - state.seatPos.z);
     if (it) it.pos.set(root.position.x, ground + 0.8, root.position.z);
+    // sharing a fire is what earns the pot (simmerpot.js reads this)
+    if (!(G.story && G.story.flags && G.story.flags.embersideShared)) {
+      setStoryFlag('embersideShared', true);
+    }
     // one small thing, once a night
     const n = nightId();
     if (state.saidNight !== n) {
