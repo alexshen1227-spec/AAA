@@ -58,6 +58,7 @@ Object.assign(MODELS, {
   tilla_gleaner: 'assets/models/blender/tilla_gleaner.glb',
   // Windwise Wilds: the herd's authored body (antlers node toggles bucks)
   deer: 'assets/models/blender/deer.glb',
+  rabbit: 'assets/models/blender/rabbit.glb',
   // the gloamhound: a spectral stalker (shape only; materials become ghost-light)
   gloamhound: 'assets/models/blender/gloamhound.glb',
   // true relic icons for the satchel

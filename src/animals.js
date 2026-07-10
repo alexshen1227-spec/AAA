@@ -266,10 +266,30 @@ function buildRabbit(x, z, seed) {
   g.position.set(x, y, z);
   G.scene.add(g);
   return {
-    g, pos: new THREE.Vector3(x, y, z), home: new THREE.Vector2(x, z),
+    g, seed, pos: new THREE.Vector3(x, y, z), home: new THREE.Vector2(x, z),
     yaw: hash2(seed, 17) * Math.PI * 2, hopT: hash2(seed, 19), state: 'idle',
     fleeT: 0, ph: hash2(seed, 23) * 9,
   };
+}
+
+// rabbit.glb swaps in over the primitive body once loaded (single mesh — the
+// update only moves the group root, so no part rig is needed). Authored -Z
+// forward; inner -PI/2 maps it onto the +X hop convention, like the deer.
+function upgradeRabbitOne(r, seed) {
+  const inst = propInstance('rabbit');
+  if (!inst) return;
+  const tint = new THREE.Color(hash2(seed, 13) < 0.4 ? 0xc9bda8 : 0x9a8468);
+  inst.traverse(o => {
+    if (o.isMesh && o.material && /Fur/i.test(o.material.name || '')) {
+      o.material = o.material.clone();
+      o.material.color.copy(tint);
+    }
+  });
+  const inner = new THREE.Group();
+  inner.rotation.y = -Math.PI / 2;
+  inner.add(inst);
+  for (const c of [...r.g.children]) r.g.remove(c); // drop the primitive body
+  r.g.add(inner);
 }
 
 function updateRabbitOne(r, dt, p, night) {
@@ -554,6 +574,10 @@ export function buildAnimals() {
   // ...and the herd follows suit
   preloadModels(['deer']).then(res => {
     if (res && res.deer) for (const d of deer) upgradeDeerOne(d);
+  }).catch(() => { });
+  // ...and the rabbits get their proper little bodies
+  preloadModels(['rabbit']).then(res => {
+    if (res && res.rabbit) for (const r of rabbits) upgradeRabbitOne(r, r.seed);
   }).catch(() => { });
   // fish: sleek dark shapes circling under the Mirrormere
   fishMesh = new THREE.InstancedMesh(
