@@ -203,8 +203,14 @@ export function updateOpening(dt) {
         say('MAREN, THE GREY WAYFARER',
           'Do you see them, wanderer? The islands still wait above the clouds. Wake the beacons, climb the towers — and the wind itself will carry you up.');
       }
+      // the wider valley: the beacons are only the beginning of what's here
+      if (k >= 1 && t > 6.6 && !G.tut.wideLine) {
+        G.tut.wideLine = true;
+        say('MAREN, THE GREY WAYFARER',
+          'But the valley is more than its old machines. There are people yet, and letters caught on the wind, and quiet things that only wake at night. Do not only wake it, wanderer — WALK it. It has been a long time since anyone was here to see.');
+      }
     }
-    if (t > 8.5) {
+    if (t > 10.5) {
       stage = -1;
       G.cinematic = false;
       bars(false);
