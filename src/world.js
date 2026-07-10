@@ -1316,6 +1316,7 @@ export function buildGleaner() {
   G.colliders.push({ x, z, r: 0.6, top: y + 1.1 });
   if (!G.tut.quests) G.tut.quests = { tilla: 0 };
 
+  G.tillaRoot = g; // emberside.js walks her to her hearth at night
   // the authored Tilla replaces the placeholder once her GLB arrives
   preloadModels(['tilla_gleaner']).then(() => {
     const inst = contractInstance('tilla_gleaner');
@@ -1324,6 +1325,7 @@ export function buildGleaner() {
     inst.root.rotation.y = Math.atan2(42 - x, -84 - z); // facing Maren's meadow
     G.scene.remove(g);
     G.scene.add(inst.root);
+    G.tillaRoot = inst.root;
   }).catch(() => { });
 
   G.interactables.push({

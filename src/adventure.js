@@ -590,6 +590,7 @@ function buildLanternStory() {
   };
   G.interactables.push(interactable);
   lanternKeeper = { ...model, point: kp, interactable };
+  G.ilyraRoot = lanternKeeper.root; // (re-pointed if her GLB swaps in later)
 
   lanternLight = new THREE.PointLight(0xbfe6ff, 0, 24, 1.7);
   G.scene.add(lanternLight);
@@ -837,6 +838,7 @@ function upgradeNpcModels() {
       G.scene.add(inst.root);
       Object.assign(lanternKeeper, { root: inst.root, glow });
     }
+    G.ilyraRoot = lanternKeeper.root; // emberside.js seats her at the shore-fire
   }
 }
 
