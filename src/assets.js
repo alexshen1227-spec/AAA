@@ -53,6 +53,9 @@ Object.assign(MODELS, {
   // the valley's people: the road-tinker and the lanternkeeper
   sella_vane: 'assets/models/blender/sella_vane.glb',
   ilyra_fen: 'assets/models/blender/ilyra_fen.glb',
+  // ...and the meadow folk who started it all
+  maren_wayfarer: 'assets/models/blender/maren_wayfarer.glb',
+  tilla_gleaner: 'assets/models/blender/tilla_gleaner.glb',
 });
 export const SIGNATURE_PROPS = ['beacon_shrine', 'skywatch_tower', 'wind_bellows',
   'treasure_chest', 'sky_debris', 'gloom_flora', 'construct_golem',

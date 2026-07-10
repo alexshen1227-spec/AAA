@@ -1236,6 +1236,20 @@ export function buildWayfarer() {
   const npc = { group: g, line: 0, x, z };
   G.wayfarer = npc;
 
+  // the authored Maren replaces the placeholder once his GLB arrives
+  preloadModels(['maren_wayfarer']).then(() => {
+    const inst = contractInstance('maren_wayfarer');
+    if (!inst) return;
+    inst.root.position.copy(npc.group.position);
+    inst.root.rotation.y = npc.group.rotation.y;
+    const orbGlow2 = makeGlow(0x9fe6ff, 1.4);
+    orbGlow2.position.set(0.585, 2.36, -0.1); // the staff's sky-orb
+    inst.root.add(orbGlow2);
+    G.scene.remove(npc.group);
+    G.scene.add(inst.root);
+    npc.group = inst.root;
+  }).catch(() => { });
+
   G.interactables.push({
     pos: new THREE.Vector3(x, y + 1, z), r: 3.4, label: 'Talk to the Wayfarer',
     onUse() {
@@ -1273,6 +1287,16 @@ export function buildGleaner() {
   G.scene.add(g);
   G.colliders.push({ x, z, r: 0.6, top: y + 1.1 });
   if (!G.tut.quests) G.tut.quests = { tilla: 0 };
+
+  // the authored Tilla replaces the placeholder once her GLB arrives
+  preloadModels(['tilla_gleaner']).then(() => {
+    const inst = contractInstance('tilla_gleaner');
+    if (!inst) return;
+    inst.root.position.copy(g.position);
+    inst.root.rotation.y = Math.atan2(42 - x, -84 - z); // facing Maren's meadow
+    G.scene.remove(g);
+    G.scene.add(inst.root);
+  }).catch(() => { });
 
   G.interactables.push({
     pos: new THREE.Vector3(x, y + 1, z), r: 3.2, label: 'Talk to Tilla',
