@@ -1280,6 +1280,21 @@ class Boglin {
     this.qMark.visible = false;
     for (let i = 0; i < this.fadeMats.length; i++) this.fadeMats[i].transparent = true;
     G.audio.sfx('die');
+    // Last Light: when a camp's final boglin falls, the world holds its
+    // breath — a beat of slow time, a warm bloom, a two-note resolve
+    let cleared = true;
+    for (const e of G.enemies) {
+      if (e !== this && !e.dead && e.camp &&
+          e.camp.x === this.camp.x && e.camp.y === this.camp.y) {
+        cleared = false;
+        break;
+      }
+    }
+    if (cleared) {
+      G.slowmo = Math.max(G.slowmo || 0, 0.45);
+      G.lastLight = 1;
+      G.audio.chord([659.25, 523.25], 0.1, 0.32);
+    }
   }
 
   dropLoot() {

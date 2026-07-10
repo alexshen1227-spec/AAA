@@ -469,6 +469,16 @@ function step(dt, now) {
   }
   G.hurtAmt = Math.max(0, G.hurtAmt - dt * 2.1); // hurt bloom holds through a freeze, then fades
 
+  // Last Light: a camp-clear kill briefly slows the whole simulation. The
+  // timer burns in real time so the moment always lasts the same beat.
+  if (G.slowmo > 0) {
+    G.slowmo = Math.max(0, G.slowmo - dt);
+    dt *= 0.35;
+  }
+  if (G.lastLight > 0) {
+    G.lastLight = Math.max(0, G.lastLight - dt * (G.slowmo > 0 ? 0.5 : 1.5));
+  }
+
   if (G.started && !G.gameOver) {
     G.time += dt;
     G.player.update(dt);

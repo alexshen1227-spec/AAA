@@ -49,6 +49,8 @@ export const G = {
   started: false,   // past title screen
   paused: false,
   gameOver: false,
+  slowmo: 0,        // seconds of Last Light slow time remaining
+  lastLight: 0,     // 0..1 warm-grade envelope for the camp-clear beat
 
   // player progress
   hearts: 12,       // quarter-hearts (12 = 3 hearts)
