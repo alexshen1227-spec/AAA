@@ -788,6 +788,9 @@ export class UI {
         { key: 'sigil', model: 'ninth_pedestal', emoji: '🐍', name: 'THE WARDEN\'S SIGIL', count: G.items.sigil,
           seen: !!G.seen.sigil, effect: 'The ninth pedestal\'s answer',
           desc: 'A small bronze ouroboros, still warm. Eight wardens kept the valley. The ninth was always going to be you.' },
+        { key: 'fork', emoji: '🎶', name: 'THE SKYSONG FORK', count: G.items.fork,
+          seen: !!G.seen.fork, use: 'fork', effect: 'Use: the unfound ring nearby (20s)',
+          desc: 'Maerwen\'s tuning fork, verdigris bronze. Struck, it asks the dark a question, and whatever you have not found yet answers — near rings high, far rings low.' },
       ],
       gear: [
         { key: 'bow', model: 'bow', emoji: '🏹', name: 'WIND BOW', count: -1, seen: true,
@@ -973,6 +976,11 @@ export class UI {
       if (G.player) spawnHealBloom(G.player.pos.x, G.player.pos.y, G.player.pos.z);
       this.toast('Warmth floods back — hearts restored!', 0xff8a9a);
       G.audio.sfx('heart');
+    } else if (key === 'fork' && G.items.fork > 0) {
+      // a relic, never spent: strike it and listen
+      G.buffs.forkUntil = G.time + 20;
+      this.toast('The fork rings once — and waits for answers.', 0x9fe8d8);
+      G.audio.chord([440, 880], 0.1, 0.08);
     } else if (key === 'shard' && G.items.shard > 0) {
       G.items.shard--;
       G.buffs.vigorUntil = G.time + 60;

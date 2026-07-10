@@ -240,6 +240,7 @@ function normalizeSave(raw) {
       gear: finiteNumber(items.gear, 0, 0, 999, true),
       pod: finiteNumber(items.pod, 0, 0, 999, true),
       sigil: finiteNumber(items.sigil, 0, 0, 9, true),
+      fork: finiteNumber(items.fork, 0, 0, 1, true),
     },
     seen: boolRecord(raw.seen),
     tut,

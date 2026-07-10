@@ -16,6 +16,7 @@ export const ITEM_DEFS = {
   gear: { name: 'Ancient Gear', tint: 0xc09a50, note: 'a relic of the old sky-works' },
   pod: { name: 'Zephyr Pod', tint: 0x9fe8d8, note: 'a bottled updraft — G throws it' },
   sigil: { name: 'The Warden\'s Sigil', tint: 0x9fffc8, note: 'the ninth pedestal\'s answer' },
+  fork: { name: 'The Skysong Fork', tint: 0x9fe8d8, note: 'strike it, and the unfound answer' },
 };
 
 export function markSeen(kind) {

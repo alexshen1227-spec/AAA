@@ -133,6 +133,12 @@ export const CHRONICLE = [
     text: 'The letters lie under the stones beneath the gold trees now. The feather charm turned all the while, like a route being planned. Delivered.' },
   { id: 'hartDone', title: 'The Pale Hart',
     text: 'At dawn a white hart waited, and did not run. It led the way old rivers lead — certain, unhurried — to a glade where a forgotten shrine woke for it. Not for you. That felt right.' },
+  { id: 'undermere1', title: 'The Under-Mere · Unsent — to the First',
+    text: '"I charted my whole life by you and called it geography. Some debts are better kept lit." — found in Maerwen\'s drowned workshop, in a drawer that opened like a held breath.' },
+  { id: 'undermere2', title: 'The Under-Mere · Unsent — to the Fifth',
+    text: '"The bellows still holds the shape of your breath, and I still hold the shape of that quarrel. The wind was kinder than my pride. It carried nothing."' },
+  { id: 'undermere3', title: 'The Under-Mere · Unsent — to the Ninth',
+    text: '"The name is always the empty place on the page, the way your seat is the empty place at the Coil. Forgive us the state of the house. Hear the storm out. Then still it."' },
   { id: 'boglinShrine', title: 'The Moss-Kin Shrine',
     text: 'Deep past the gold trees, the boglins ring a fallen sky-cog with totems and small offerings. They did not loot it; they knelt to it. Whatever broke the sky, the moss-kin remember it as a god falling — which means they remember it too.' },
 ];
