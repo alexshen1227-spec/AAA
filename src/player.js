@@ -3,7 +3,7 @@
 // paraglide, swim — all governed by a stamina wheel. Plus the grab ability.
 import * as THREE from 'three';
 import { G } from './state.js';
-import { heightAt, slopeAt, normalAt, WATER_Y, toonMat } from './terrain.js';
+import { heightAt, slopeAt, normalAt, inRiver, riverFlow, WATER_Y, toonMat } from './terrain.js';
 import { clamp, lerp } from './noise.js';
 import { settleCrate, spawnSparkle, gustAt, makeGlow, burnGloomAt } from './world.js';
 import { flameNear, igniteFireNear } from './enemies.js';
@@ -1453,7 +1453,12 @@ export class Player {
   }
 
   updateSwim(dt, mx, mz, inputLen, k) {
-    if (!this.useStamina((inputLen > 0 ? 7 : 3.5) * dt)) {
+    // The Long Reed: a river takes you. Drifting downstream costs almost no
+    // stamina, so you can float on your back the length of the valley; the
+    // riverbed's own downhill slope is the current.
+    const drifting = inRiver(this.pos.x, this.pos.z);
+    const drain = drifting ? (inputLen > 0 ? 2.4 : 0.5) : (inputLen > 0 ? 7 : 3.5);
+    if (!this.useStamina(drain * dt)) {
       // drowning: teleport to respawn-ish shore with damage
       this.damage(2);
       if (!G.gameOver) {
@@ -1471,6 +1476,23 @@ export class Player {
     this.vel.z = lerp(this.vel.z, mz * speed, dt * 4);
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
+    // the current: push down the riverbed's slope, and turn the drifter to
+    // face the way the water is going when they stop paddling
+    if (drifting) {
+      const f = riverFlow(this.pos.x, this.pos.z);
+      if (f[0] !== 0 || f[1] !== 0) {
+        const flow = 4.2;
+        this.pos.x += f[0] * flow * dt;
+        this.pos.z += f[1] * flow * dt;
+        if (inputLen === 0) { // face the way the water is going
+          const tYaw = Math.atan2(f[0], f[1]);
+          let dy = tYaw - this.yaw;
+          while (dy > Math.PI) dy -= Math.PI * 2;
+          while (dy < -Math.PI) dy += Math.PI * 2;
+          this.yaw += dy * Math.min(1, dt * 2);
+        }
+      }
+    }
     // gentle stroke bob layered over the ambient chop; ride high enough that
     // the head and arm strokes break the surface
     const strokeBob = inputLen > 0 ? Math.sin(G.time * 6) * 0.06 : 0;

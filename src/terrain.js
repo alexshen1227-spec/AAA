@@ -58,6 +58,27 @@ export function inRiver(x, z) {
   return Math.abs(fbm(x * 0.0022 + 100, z * 0.0022 - 50, 3)) < 0.09;
 }
 
+// The Long Reed: the current's direction at a river point. The river runs
+// ALONG the channel (the fbm isoline where inRiver is true), so flow is the
+// tangent perpendicular to that field's gradient — oriented downhill by a
+// coarse terrain slope so it stays smooth instead of flickering with noise.
+const _riverFlow = [0, 0];
+const _riverField = (x, z) => fbm(x * 0.0022 + 100, z * 0.0022 - 50, 3);
+export function riverFlow(x, z) {
+  const e = 4;
+  const rx = _riverField(x + e, z) - _riverField(x - e, z);
+  const rz = _riverField(x, z + e) - _riverField(x, z - e);
+  let tx = -rz, tz = rx;                       // tangent along the channel
+  const tl = Math.hypot(tx, tz);
+  if (tl < 1e-6) { _riverFlow[0] = 0; _riverFlow[1] = 0; return _riverFlow; }
+  tx /= tl; tz /= tl;
+  const E = 18;                                // coarse slope picks downstream
+  const dh = heightAt(x + tx * E, z + tz * E) - heightAt(x - tx * E, z - tz * E);
+  if (dh > 0) { tx = -tx; tz = -tz; }          // flow toward the lower ground
+  _riverFlow[0] = tx; _riverFlow[1] = tz;
+  return _riverFlow;
+}
+
 export function normalAt(x, z, out) {
   const e = 0.9;
   const hx = heightAt(x + e, z) - heightAt(x - e, z);
