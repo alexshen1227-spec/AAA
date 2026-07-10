@@ -294,6 +294,7 @@ function updateBolts(dt) {
         G.audio.sfx('thud');
         b.phase = 1; b.t = 0;
         b.mesh.visible = false;
+        b.ring.visible = true; // reflected bolts hid it; show the landing burst
         b.ring.position.set(b.x, gy + 0.06, b.z); // burst where it landed
       }
     } else {                              // impact ring burst

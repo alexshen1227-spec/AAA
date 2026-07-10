@@ -8,6 +8,31 @@
 
 Effort: **S** = an afternoon, **M** = a day or two, **L** = a week, **XL** = multi-week.
 
+## Delivery status
+
+This document is the original ranked design input, not a list of missing work.
+The current game has shipped or substantially adapted more than thirty of these
+ideas across repeated implementation, stress-test, and polish passes.
+
+**Shipped/adapted:** Deeds Written in Stars, Gloamings, Letters on the Wind,
+The Pale Hart, Glimmerwisp Company, Kindled Arrows, Living Gusts, Zephyr Pods,
+The Wind Remembers credits, The Ninth Warden, Name of the Land, Songlines,
+Golem-Forged Gear, Postcards, Hollow Stones, The Same Sky, Gubbin, War Drums,
+Lanterns at Mirrormere, Razorkites, Chase the Fallen Star, The Long Reed, The
+Coil, The Coiled Storm, the Wayfarer's Scarf and idles, Last Light, the Hush
+Bell, the Wanderer's Journal, the Simmerpot, hit-stop/hurt direction, a gem
+trader, Wardshell guarding/bolt reflection, and gameplay-reactive storms.
+
+The implementation also grew original follow-on content: the Under-Mere,
+Tumbled Vale, Sixth's Vigil, The Drift, Stray Squalls, Gloamhounds, Emberside,
+Scent on the Wind, thermal riders, a Warden Echo chain, and extensive locally
+authored Blender upgrades for characters, wildlife, relics, and landmarks.
+
+Ideas still below remain valid future pitches, but they should be re-evaluated
+against the shipped campaign rather than assumed absent. Features that would
+add backend dependence, unbounded procedural worlds, or a recognizable clone
+of another game's signature mechanic were intentionally deprioritized.
+
 ## Ranked index
 
 | # | Score | Effort | Lens | Idea |

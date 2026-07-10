@@ -175,7 +175,10 @@ window.addEventListener('keydown', (e) => {
 
   if (!G.started && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space')) {
     if (e.code === 'Space') keys._spaceLatch = true; // starting Space must not become a jump/skip
-    startGame(!!(e.shiftKey && saved));
+    // A found save is precious: the ordinary action continues it. Starting
+    // anew requires the deliberate Shift modifier instead of an easy-to-miss
+    // modifier being required to avoid wiping progress.
+    startGame(!!(saved && !e.shiftKey));
     return;
   }
   if (!G.started) return;
@@ -227,7 +230,7 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
 canvas.addEventListener('click', (e) => {
-  if (!G.started) { startGame(!!(e.shiftKey && saved)); return; } // clicking the title starts too
+  if (!G.started) { startGame(!!saved); return; } // clicking safely continues a found save
   if (mapOpen || G.ui.invOpen) return;          // overlays own the pointer
   if (document.pointerLockElement !== canvas) {
     lockPointer();

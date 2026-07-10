@@ -159,16 +159,16 @@ function attuneGate(rec, how) {
     G.audio.chord([196, 261.6, 329.6, 392], 0.11, 0.16);
   }
   const n = attunedCount();
-  if (G.ui) {
-    if (n >= GATES.length) {
-      G.ui.banner('THE GATES REMEMBER', 'A joined wind rises beyond the Thornwood');
-      signalQuestEvent('coil_unlocked');
-    } else {
-      G.ui.toast(how === 'pod'
-        ? 'The bottled wind washes the bronze — the gate drinks it and turns.'
-        : 'You thread the ring, and the gate wakes around you like a drawn breath.',
-        0x9fe8d8, 5200);
-    }
+  if (n >= GATES.length) {
+    // Progress is world state, not presentation state: unlocking must not
+    // depend on whether the HUD happened to be available for the banner.
+    signalQuestEvent('coil_unlocked');
+    if (G.ui) G.ui.banner('THE GATES REMEMBER', 'A joined wind rises beyond the Thornwood');
+  } else if (G.ui) {
+    G.ui.toast(how === 'pod'
+      ? 'The bottled wind washes the bronze — the gate drinks it and turns.'
+      : 'You thread the ring, and the gate wakes around you like a drawn breath.',
+      0x9fe8d8, 5200);
   }
 }
 
@@ -236,7 +236,7 @@ function applyGateVisuals() {
       m.emissiveIntensity = 0.3 + strength;
     }
   }
-  if (attunedCount() >= GATES.length || G.story.flags.coilUnlocked) ensureCoilLift();
+  if (coilAccessible()) ensureCoilLift();
 }
 
 function updateGate(rec, dt) {
@@ -404,6 +404,8 @@ const island = {
 
 const flag = id => !!(isObject(G.story) && isObject(G.story.flags) && G.story.flags[id]);
 const runeCount = () => RUNE_FLAGS.reduce((n, id) => n + (flag(id) ? 1 : 0), 0);
+const coilAccessible = () => attunedCount() >= GATES.length || flag('coilUnlocked') ||
+  flag('coilCompleted') || flag('finaleCompleted');
 
 function grassTopMat() { return toonMat({ color: 0x6dbb4d }); }
 
@@ -499,6 +501,12 @@ function glowTexture() {
 }
 
 function touchRune(rec) {
+  if (!coilAccessible()) {
+    if (G.ui) G.ui.dialog('A SILENT WIND-RUNE',
+      'The mark is cold. Whatever wakes this place must begin with the twin gates below.', false);
+    if (G.audio) G.audio.sfx('lock');
+    return;
+  }
   if (rec.flag === 'coilRuneCarry') {
     // the Carry rune answers the plate, not the hand
     if (!flag(rec.flag)) {
@@ -516,7 +524,7 @@ function touchRune(rec) {
 }
 
 function lightRune(flagId) {
-  if (flag(flagId)) return;
+  if (!coilAccessible() || flag(flagId)) return;
   setStoryFlag(flagId, true);
   const rec = island.runes.find(r => r.flag === flagId);
   if (rec) {
@@ -584,6 +592,11 @@ function buildStations() {
 }
 
 function rouseVent() {
+  if (!coilAccessible()) {
+    if (G.ui) G.ui.toast('No joined wind answers. The twin gates are still silent.', 0xcccccc);
+    if (G.audio) G.audio.sfx('lock');
+    return;
+  }
   const v = island.vent;
   if (!v || G.time < v.readyAt) {
     if (G.ui) G.ui.toast('The vent is still drawing breath...', 0xcccccc);
@@ -714,6 +727,12 @@ function usePedestal() {
       'The seat is no longer empty. It never really was.', false);
     return;
   }
+  if (!coilAccessible() || runeCount() < RUNE_FLAGS.length) {
+    if (G.ui) G.ui.dialog('THE NINTH PEDESTAL',
+      'The empty seat keeps its silence. Three wind-runes around the Coil have not yet joined their voices.', false);
+    if (G.audio) G.audio.sfx('lock');
+    return;
+  }
   if (r.state === 'idle') {
     r.state = 'tone';
     r.t = 0;
@@ -732,7 +751,7 @@ function usePedestal() {
 }
 
 function completeCoil() {
-  if (flag('coilCompleted')) return;
+  if (!coilAccessible() || runeCount() < RUNE_FLAGS.length || flag('coilCompleted')) return;
   if (!G.items.sigil) {
     G.items.sigil = 1;
     markSeen('sigil');
@@ -754,6 +773,11 @@ function completeCoil() {
 
 function updateReveal(dt) {
   const r = island.reveal;
+  // A reloaded completed Coil starts at the module-default 'idle' with ghosts
+  // rebuilt invisible; promote straight to the standing vigil so the faint
+  // presence is restored (the live reveal sets coilCompleted only in 'letter',
+  // never 'idle', so this cannot skip the first-time sequence).
+  if (r.state === 'idle' && flag('coilCompleted')) r.state = 'done';
   if (r.state === 'done') {
     // the vigil dims to a faint standing presence
     for (const ghost of island.ghosts) {
@@ -844,8 +868,9 @@ function updateFlares(dt) {
 }
 
 function updateIslandProgress() {
+  const accessible = coilAccessible();
   const key = RUNE_FLAGS.map(id => flag(id) ? 1 : 0).join('') +
-    '|' + (flag('coilCompleted') ? 1 : 0);
+    '|' + (flag('coilCompleted') ? 1 : 0) + '|' + (accessible ? 1 : 0);
   if (key !== island.appliedProgress) {
     island.appliedProgress = key;
     for (const rec of island.runes) {
@@ -855,7 +880,7 @@ function updateIslandProgress() {
         rec.coreMat.color.setHex(lit ? 0xc8ffe4 : 0x2f4a41);
       }
     }
-    if (runeCount() >= RUNE_FLAGS.length) ensureHeartLift();
+    if (accessible && (runeCount() >= RUNE_FLAGS.length || flag('coilCompleted'))) ensureHeartLift();
     if (flag('coilCompleted') && island.pedestal) {
       island.pedestal.interactable.label = 'Remember the ninth warden';
     }
@@ -869,6 +894,9 @@ function updateIslandProgress() {
 
 function updateIsland(dt) {
   updateIslandProgress();
+  // Geometry remains visible as a distant landmark, but no arrival, puzzle,
+  // wind, or reveal state may advance until the gates create the joined lift.
+  if (!coilAccessible()) return;
   updateReveal(dt);
   updateFlares(dt);
   const p = G.player ? G.player.pos : null;

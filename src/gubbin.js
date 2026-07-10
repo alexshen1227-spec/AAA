@@ -31,6 +31,16 @@ let gubbin = null;   // {root, mats, it, spookT, home}
 let cacheMade = false;
 
 const flag = id => !!(G.story && G.story.flags && G.story.flags[id]);
+
+function revealCache(withFlourish = false) {
+  if (cacheMade) return;
+  cacheMade = true;
+  const y = heightAt(CACHE.x, CACHE.z);
+  makeChest('chest.gubbin-hoard', CACHE.x, y, CACHE.z,
+    1.4, { kind: 'gems', n: 7 });
+  if (withFlourish) spawnSparkle(CACHE.x, y + 0.6, CACHE.z, 0xffdf8a, 8, 2);
+}
+
 const playerArmed = () => {
   const p = G.player;
   return !!p && (p.aiming || (p.attackT !== undefined && p.attackT >= 0) || p.guarding);
@@ -80,9 +90,9 @@ function buildGubbin() {
   };
   G.interactables.push(it);
   gubbin = { root, mats, it, spookT: 0, home: new THREE.Vector3(HOME.x, y, HOME.z), line: 0 };
-  // resume where the conversation left off; the cache flag survives reloads so
-  // it is never re-spawned (which used to leak a redundant chest + prompt)
-  if (flag('gubbinCache')) { cacheMade = true; gubbin.line = 2; }
+  // Reconstruct the revealed cache after a reload. makeChest owns the separate
+  // opened/claimed state, so an unopened rumor cache must continue to exist.
+  if (flag('gubbinCache')) { revealCache(); gubbin.line = 2; }
   if (flag('gubbinMet')) gubbin.line = LINES.length - 1;
 }
 
@@ -96,11 +106,8 @@ function useGubbin() {
   G.ui.dialog(name, text, more);
   G.audio.sfx(i === 0 ? 'lock' : 'ui_open');
   if (i === 2 && !cacheMade && !flag('gubbinCache')) {
-    cacheMade = true;
     if (G.story && G.story.flags) G.story.flags.gubbinCache = true;
-    makeChest('chest.gubbin-hoard', CACHE.x, heightAt(CACHE.x, CACHE.z), CACHE.z,
-      1.4, { kind: 'gems', n: 7 });
-    spawnSparkle(CACHE.x, heightAt(CACHE.x, CACHE.z) + 0.6, CACHE.z, 0xffdf8a, 8, 2);
+    revealCache(true);
     save();
   }
   if (!flag('gubbinMet') && gubbin.line >= LINES.length - 1) {

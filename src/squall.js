@@ -8,7 +8,7 @@
 // Transient by design, like the fallen stars: nothing persists, one squall
 // at a time, and a squall not chased simply wanders on.
 import * as THREE from 'three';
-import { G } from './state.js';
+import { G, save } from './state.js';
 import { heightAt, WATER_Y, toonMat } from './terrain.js';
 import { spawnSparkle, registerStandSurface, markSeen } from './world.js';
 
@@ -128,6 +128,7 @@ function stillSquall() {
   G.items.shard = (Number(G.items.shard) || 0) + 1;
   markSeen('gem');
   markSeen('shard');
+  save();
   spawnSparkle(x, y + 1, z, 0xbfe8ff, 50, 6);
   spawnSparkle(x, y - 10, z, 0xfff2d8, 30, 8);
   if (G.audio) {

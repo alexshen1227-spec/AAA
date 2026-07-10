@@ -441,11 +441,14 @@ function syncGatePhase(f) {
   if (f.beacons >= EXPECTED_BEACONS && f.towers >= EXPECTED_TOWERS &&
       f.vaults >= EXPECTED_VAULTS && f.gear >= EXPECTED_GEAR &&
       f.wardenLore >= REQUIRED_WARDEN_LORE) target = 'awakened';
-  if (f.gatesAttuned >= 2 || f.flags.coilUnlocked || f.flags.coilEntered) target = 'open';
+  if (f.gatesAttuned >= 2 || f.flags.coilUnlocked) target = 'open';
   if (f.flags.finaleCompleted) target = 'quiet';
 
   const current = G.story.gates.phase;
-  if (GATE_PHASES.indexOf(target) > GATE_PHASES.indexOf(current)) {
+  // Phase is derived from durable world facts. Assigning the exact value also
+  // repairs saves made while an early Coil arrival incorrectly promoted the
+  // gates to "open" and made them impossible to attune.
+  if (target !== current) {
     G.story.gates.phase = target;
     G.story.gates.changedAt = stamp();
     return true;

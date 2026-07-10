@@ -1068,7 +1068,7 @@ export function updateIslands() {
 }
 
 // ------------------------------------------------- permanent updrafts
-// rising columns beside each far sky island (enter at ground level,
+// rising columns beside each free-roam far sky island (enter at ground level,
 // ride up past the rim, steer over to land) plus two thermals on the
 // Stormridge approach. no expires — they never prune. sky.js draws the tall
 // streaks; updateUpdraftFx() swirls leaves at each base.
@@ -1081,7 +1081,10 @@ function initPermanentUpdrafts() {
   // island columns: same rim angle the waterfall uses, pushed clear of the
   // island underside (zone r 4.5 + ~2m gap outside the rim) so a glider can
   // enter the column from open ground straight below
-  for (const ii of [1, 2, 3]) {
+  // The Coil at ISLANDS[2] is the main-campaign destination. Its ascent is
+  // authored by coil.js only after both ouroboros gates are attuned; giving it
+  // a generic island column here allowed the entire gate chain to be skipped.
+  for (const ii of [1, 3]) {
     const [ix, iz, topY, ir] = ISLANDS[ii];
     const fa = hash2(ii, 21) * Math.PI * 2; // the waterfall angle
     const d = ir + 6.5;
@@ -1103,7 +1106,8 @@ function initPermanentUpdrafts() {
   // Stormridge approach thermals: probe rings around the massif for open,
   // walkable slope ground; take two well-separated spots
   let prevT = null;
-  for (let a = 0; a < 40 && updraftBases.length < 5; a++) {
+  const stormTarget = updraftBases.length + 2;
+  for (let a = 0; a < 40 && updraftBases.length < stormTarget; a++) {
     const ring = (a / 10) | 0;
     const ang = (a % 10) * 0.6283 + ring * 0.21;
     const dd = 34 + ring * 14;
@@ -1117,7 +1121,7 @@ function initPermanentUpdrafts() {
   }
   // fallback spots if the probe was too picky
   for (const [x, z] of [[-152, -226], [-86, -292]]) {
-    if (updraftBases.length >= 5) break;
+    if (updraftBases.length >= stormTarget) break;
     const h = Math.max(heightAt(x, z), WATER_Y + 1);
     G.updraftZones.push({ x, z, r: 4.5, bottomY: h - 0.5, topY: h + 45, strength: 14 });
     updraftBases.push({ x, z });

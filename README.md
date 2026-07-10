@@ -1,70 +1,112 @@
 # The Wilds of Aerwyn
 
-Static website build for GitHub Pages:
-https://alexshen1227-spec.github.io/AAA/
+An original open-air action-adventure for the browser, built with Three.js.
+Aerwyn is a painterly, cel-shaded wilderness where traversal, weather, music,
+memory, and wind are part of the same world—not separate minigames.
 
-An original open-air adventure for the browser, inspired by the *feel* of modern
-open-world exploration games: a painterly cel-shaded wilderness where you can
-climb anything, glide anywhere, and chart the land beacon by beacon. Built with
-Three.js. World geometry is largely procedural; signature landmarks and props
-are original Blender-authored GLBs (assets/models/blender, assets/models/gen),
-and the game also uses CC0 asset packs — KayKit characters and Kenney
-sounds/models — credited in assets/licenses/.
+Play the published build at:
+[alexshen1227-spec.github.io/AAA](https://alexshen1227-spec.github.io/AAA/)
+
+The game takes high-level inspiration from modern open-world adventures while
+using its own setting, characters, story, mechanics, music systems, and assets.
+Signature landmarks, characters, creatures, relics, and props are original
+locally authored GLBs under `assets/models/blender` and `assets/models/gen`.
+CC0/attributed supporting packs are documented under `assets/licenses`.
 
 ## Run it
 
-```
+For development:
+
+```text
 python serve.py
 ```
 
-Then open http://localhost:8123 — or use the Claude Code preview launch config
-(`.claude/launch.json`, server name `game`).
+Open [http://localhost:8123](http://localhost:8123).
 
-## How to play
+For a portable offline build, double-click `WildsOfAerwyn.html`. It embeds all
+runtime modules, fonts, models, and audio. Rebuild it with:
+
+```text
+python build_standalone.py
+```
+
+## Controls
 
 | Input | Action |
 |---|---|
-| WASD + mouse | Move / look (click to capture the cursor) |
-| SHIFT | Sprint (drains stamina) |
-| SPACE | Jump — hold in the air to deploy the glider |
-| Walk into a cliff | Climb (stamina; SPACE leaps up the wall) |
-| Click / J | Sword attack (3-hit combo) |
-| TAB | Lock on to the nearest boglin |
-| E | Interact — awaken beacons, lift glimmer rocks |
-| F / R | Grab & place crates / rotate held crate |
-| H | Eat an apple (+1 heart) |
-| P / M | Pause / mute |
+| WASD + mouse | Move and look; click the game to capture the cursor |
+| Shift | Sprint; drains stamina |
+| Space | Jump; hold in the air to open the glider |
+| W / S while gliding | Dive / flare |
+| Walk into a cliff | Climb; Space leaps away from the wall |
+| Click / J | Sword attack; fires while aiming; throws a held prop |
+| Hold right mouse | Aim the bow on the ground or in the air |
+| Q | Guard; a precisely timed guard reflects Hollow magic |
+| Tab | Lock on to the nearest hostile target |
+| E | Interact, speak, awaken, cook, rest, or inspect |
+| F / R | Grab or place a prop / rotate a held prop |
+| G | Throw a Zephyr Pod to plant a temporary updraft |
+| H | Eat an apple |
+| I | Open the satchel, quest log, Chronicle, deeds, and journal |
+| C | Frame or keep a postcard moment |
+| M / N / P | Map / mute / pause |
 
-## The loop
+When a save exists, Enter or click continues it. Shift+Enter deliberately starts
+a new journey.
 
-- **Awaken the 8 ancient beacons** — each is a checkpoint, heals you, and grants
-  a Spirit Orb. Every 4 orbs: +1 heart or +stamina.
-- **Climb the 3 skywatch towers** — rest ledges ring the shaft; topping one
-  charts the region and reveals beacons on the minimap.
-- **Boglin camps** roam the plains (indigo ones hit harder). They drop life
-  and sky gems.
-- **12 forest glimmers** hide under suspicious small rocks.
-- **Ancient ruins** dot the plains — read the glowing lore tablets to piece
-  together what happened to Aerwyn.
-- Day/night cycle (~10 min), swimming, fall damage, crate-stacking physics
-  puzzles, generative piano ambience, full save via localStorage.
-- Ambient life: birds circle by day, fireflies rise near water and woods at
-  night, flowers sway in the meadows.
+## The adventure
+
+The complete main story, **The Ninth Warden**, carries the player from the
+opening meadow through eight beacons, three skywatch towers, Warden testimony,
+twin pressure-vaults, golem-forged equipment, the two ouroboros gates, the Coil
+sky-vault, the Coiled Storm, and a skippable authored credits sequence.
+
+The wider world includes:
+
+- Tilla's fallen-sky-stone quest, Ilyra's five Mirrormere lanterns, Sella
+  Vane's weather-aware road shop, Gubbin the Craven, and fire-side gatherings.
+- The Under-Mere workshop, Tumbled Vale, Sixth's Vigil, the Drift sky-road,
+  Hollow Stones, Gloamings, letters on the wind, the Pale Hart, Warden Echoes,
+  and an auto-written Wanderer's Journal.
+- Twenty persistent glimmers, deed-stars that form a constellation, ancient
+  gear upgrades, relics, cooking and regrowing forage, rumors, and postcards.
+- Sword combos, lock-on, guarding and perfect reflection, ground/aerial archery,
+  kindled arrows, movable/throwable props, Boglins, Hollows, Razorkites,
+  Gloamhounds, camp variants, and camp-clear Last Light moments.
+- Climbing, mantling, gliding, living gusts, portable updrafts, swimming, a
+  rideable river current, sky islands, wind trials, and the Hush Bell.
+- A ten-minute day/night cycle; rain, warned lightning, wet climbing, doused
+  camps, blood nights, fallen-star chases, post-game Stray Squalls, rainbows,
+  regional Songlines, adaptive ambience, real music, and synthesized fallbacks.
+- Authored deer, rabbits, fish, NPCs, enemies, relics, landmarks, waterfalls,
+  plus birds, thermal riders, fireflies, butterflies, foliage, and instanced grass.
 
 ## Architecture
 
-| File | Role |
+| Area | Main modules |
 |---|---|
-| `src/noise.js` | Seeded simplex noise / fbm / ridge — the world is deterministic |
-| `src/terrain.js` | Analytic height field (physics = graphics), terraced cliffs, vertex-colored toon terrain, water, minimap render |
-| `src/sky.js` | Day/night palette lighting, sun/moon, stars, clouds, fog |
-| `src/world.js` | Forests, rocks, grass (26k swaying instanced blades), beacons, towers, crates, glimmers, pickups, particles |
-| `src/player.js` | Procedural hero + controller: run/sprint/jump/climb/glide/swim, stamina, combat, grab ability, orbit camera |
-| `src/enemies.js` | Boglin AI: wander → alert → chase → attack, health bars, drops |
-| `src/audio.js` | WebAudio synthesis: generative pentatonic piano, wind, crickets, all SFX |
-| `src/ui.js` | Hearts, stamina wheel, minimap, toasts, banners, prompts |
-| `src/main.js` | Bootstrap, input, save/load, game loop (`window.__step` drives headless testing) |
+| Bootstrap, save, input, simulation | `src/main.js`, `src/state.js` |
+| Terrain, sky, weather | `src/terrain.js`, `src/sky.js`, `src/noise.js` |
+| Player, combat, enemies, wildlife | `src/player.js`, `src/hero-rig.js`, `src/enemies.js`, `src/animals.js` |
+| World and campaign | `src/world.js`, `src/quests.js`, `src/coil.js`, `src/finale.js` |
+| Characters and side stories | `src/adventure.js`, `src/remember.js`, `src/gubbin.js`, `src/undermere.js`, `src/vigil.js` |
+| Dynamic/world systems | `src/fallenstar.js`, `src/squall.js`, `src/hearth.js`, `src/simmerpot.js`, `src/drift.js` |
+| Presentation | `src/ui.js`, `src/audio.js`, `src/post.js`, `src/scarf.js`, `src/postcard.js` |
+| Assets | `src/assets.js`, `src/sfx-manifest.js` |
 
-Testing hook: `window.__game` exposes state; `window.__step(dt, n)` steps the
-simulation synchronously (rendering only the final frame), which is how the
-whole game was verified end-to-end in an automated browser.
+The world uses an analytic deterministic height field, so terrain rendering,
+collision, placement, river flow, and map generation agree. Persistent content
+uses versioned stable IDs and validated localStorage migration.
+
+## Verification
+
+Run the dependency-free regression suite:
+
+```text
+python verify_game.py --build
+```
+
+It checks JavaScript syntax, the complete local import graph, DOM references,
+runtime asset presence, GLB structure, and the self-contained build manifest.
+The game also exposes `window.__game` and `window.__step(dt, n)` for focused
+browser scenarios.

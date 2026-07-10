@@ -97,9 +97,11 @@ function buildDrift() {
     onUse() {
       if (this.gone || flag('driftCache')) { this.gone = true; return; }
       this.gone = true;
-      setStoryFlag('driftCache', true);
       G.player.arrows = (Number(G.player.arrows) || 0) + 10;
       G.gems = (Number(G.gems) || 0) + 2;
+      // setStoryFlag commits immediately, so grant the inventory first and
+      // persist the one-shot claim and its reward in the same snapshot.
+      setStoryFlag('driftCache', true);
       spawnSparkle(this.pos.x, this.pos.y + 0.5, this.pos.z, 0xffdf8a, 26, 3.5);
       G.ui.toast('Ten arrows and two gems, left for whoever made the first hop.', 0xf4ecd2, 4600);
       G.audio.sfx('pickup');
