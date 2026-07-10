@@ -121,6 +121,7 @@ const WEATHER_NEXT = {
 const WEATHER_FADE = 8; // seconds to crossfade all visual params
 
 let wKind = 'clear';                                    // current (target) state
+let windHeading = 0.9;                                  // ambient wind direction (rad)
 const wPrev = Object.assign({}, WEATHER_PARAMS.clear);  // params fading from
 const wCur = Object.assign({}, WEATHER_PARAMS.clear);   // blended params, per frame
 let wBlend = 1;                                         // 0..1 crossfade progress
@@ -189,6 +190,11 @@ function updateWeather(dt) {
   // shared contract: sky.js is the sole writer of G.weather (mutate in place)
   G.weather.kind = wKind;
   G.weather.windMul = wCur.windMul;
+  // the ambient wind HEADING: a slow wandering direction the whole valley
+  // shares (scent carries along it; storm gusts override with their own)
+  windHeading += dt * 0.02 + Math.sin(G.time * 0.013) * dt * 0.05;
+  G.weather.windDx = Math.cos(windHeading);
+  G.weather.windDz = Math.sin(windHeading);
   G.weather.wetness = wCur.wetness;
   G.weather.grim = wCur.grim; // post.js reads this to fade the god rays
   if (wCur.wetness > 0.55) rainSustain += dt;

@@ -125,6 +125,16 @@ function upgradeDeerOne(d) {
   d.legs = legs;
 }
 
+// headless-test window into the herd (positions + states, no live objects)
+export function getAnimalsSummary() {
+  return {
+    deer: deer.map(d => ({
+      x: +d.pos.x.toFixed(1), z: +d.pos.z.toFixed(1),
+      state: d.state, buck: !!d.buck,
+    })),
+  };
+}
+
 // deer/rabbit shared: walk with terrain + water avoidance
 function walkerMove(a, dx, dz) {
   const nx = a.pos.x + dx, nz = a.pos.z + dz;
@@ -139,6 +149,38 @@ function walkerMove(a, dx, dz) {
 function updateDeerOne(d, dt, p, sprinting) {
   const dist = Math.hypot(p.x - d.pos.x, p.z - d.pos.z);
   if (dist > 150) return; // asleep beyond view
+
+  // scent on the wind: when the ambient wind blows from the player toward
+  // the deer, it smells you long before it sees you — head snaps up, ears
+  // turn, a held beat, and then the bolt. Approach from downwind and only
+  // the ordinary eyes-and-ears rules apply: that is how you get close.
+  const w = G.weather;
+  if (d.state !== 'flee' && d.state !== 'scent' && w && w.windMul >= 1.25 &&
+      Number.isFinite(w.windDx)) {
+    const gust = w.gustPulse > 0.3; // storm gusts carry scent much farther
+    const range = gust ? 52 : 34;
+    if (dist < range && dist > WARY_R) {
+      const toDeerX = (d.pos.x - p.x) / dist, toDeerZ = (d.pos.z - p.z) / dist;
+      const wdx = gust ? w.gustDx : w.windDx, wdz = gust ? w.gustDz : w.windDz;
+      if (toDeerX * wdx + toDeerZ * wdz > 0.72) {
+        d.state = 'scent'; d.stateT = 0;
+        d.yaw = Math.atan2(p.x - d.pos.x, p.z - d.pos.z); // turns TOWARD the smell
+      }
+    }
+  }
+  if (d.state === 'scent') {
+    // the tell: frozen, head high, one long second of knowing
+    d.stateT += dt;
+    d.neck.rotation.x = lerp(d.neck.rotation.x, -0.3, Math.min(1, dt * 10));
+    for (let i = 0; i < 4; i++) d.legs[i].rotation.x = 0;
+    d.g.position.copy(d.pos);
+    d.g.rotation.y = d.yaw + MODEL_FORWARD_TO_GAME_FORWARD;
+    if (d.stateT > 0.95) {
+      d.state = 'flee'; d.fleeT = 3.6 + Math.random() * 1.2;
+      d.yaw = Math.atan2(d.pos.x - p.x, d.pos.z - p.z); // away
+    }
+    return;
+  }
 
   // spook check
   if (d.state !== 'flee' && (dist < WARY_R || (sprinting && dist < SPRINT_WARY))) {
