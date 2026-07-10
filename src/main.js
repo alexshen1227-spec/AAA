@@ -25,6 +25,7 @@ import { buildCoil, updateCoil } from './coil.js';
 import { updateFinale } from './finale.js';
 import { updateFallenStar } from './fallenstar.js';
 import { updateSquall } from './squall.js';
+import { updateHearths } from './hearth.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -513,6 +514,7 @@ function step(dt, now) {
     if (!G.gameOver) updateFinale(dt);
     if (!G.gameOver) updateFallenStar(dt);
     if (!G.gameOver) updateSquall(dt);
+    if (!G.gameOver) updateHearths(dt);
     if (!G.gameOver) updateQuests(dt);
     if (frame % 19 === 0) updateRegion();
     updateBloodMoon();
