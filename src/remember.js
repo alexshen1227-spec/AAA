@@ -100,6 +100,8 @@ const GLOAMS = [
     entry: 'An echo at the vault door: a keeper laying something small and loved against the stone, then looking up, the way you look at weather. Or farewell.' },
   { id: 'gloam3', x: -150, z: -100, r: 34, title: 'The Vigil',
     entry: 'An echo kneeling beside the kneeling warden, keeping it company. Whoever they were, they stayed long enough to leave a mark in the light.' },
+  { id: 'gloam4', x: 284, z: 300, r: 30, title: 'The Falling',
+    entry: 'In the Tumbled Vale, where an island came down: an amber figure stands on ground that is still, for one held moment, an island. It looks up at where the rest of the sky used to be, reaches for a hand that is already gone, and keeps standing as the light comes apart around it. Someone rode this one down.' },
 ];
 
 // Deed-stars: index order here IS the constellation order in sky.js
@@ -519,6 +521,12 @@ const GLOAM_SCRIPTS = {
     { clip: 'PickUp', dur: 3.5, from: [1.5, 6], to: [1.5, 6], face: [0, 0] },
     { clip: 'Idle', dur: 3.5, from: [1.5, 6], to: [1.5, 6], face: [0, 0] },
   ],
+  gloam4: [ // the Falling — a rider standing as the island comes apart
+    { clip: 'Idle', dur: 4, from: [0, 0], to: [0, 0], face: [0, 40] },   // gazes up at the lost sky
+    { clip: 'Throw', dur: 3, from: [0, 0], to: [0, 0], face: [6, 8] },   // reaches for a hand gone
+    { clip: 'Idle', dur: 5, from: [0, 0], to: [0, 0], face: [0, 40] },   // and keeps standing
+    { clip: 'Idle', dur: 2, from: [0, 0], to: [0.4, -0.3], vanish: true }, // the light comes apart
+  ],
 };
 
 function startGloam(gl) {
@@ -706,7 +714,9 @@ const DEED_CHECKS = {
   glimmers: () => G.glimmers >= 9,
   glimmerAll: () => G.glimmers >= GLIMMER_TOTAL,
   stones: () => STONES.every(s => G.lore[s.id]),
-  gloam: () => GLOAMS.every(g => G.lore[g.id]),
+  // the original three gloamings earn the deed; the Tumbled Vale's is a bonus
+  // vignette and must never retroactively un-kindle a witnessed star
+  gloam: () => ['gloam1', 'gloam2', 'gloam3'].every(id => G.lore[id]),
   letters: () => !!G.lore.lettersLaid,
   hart: () => !!G.lore.hartDone,
   crimson: () => crimsonT >= 30,
@@ -750,6 +760,11 @@ function updateDeeds(dt) {
 }
 
 // --------------------------------------------------------------- update
+
+export function __gloamDebug() {
+  return activeGloam ? { id: activeGloam.gl.id, t: +activeGloam.t.toFixed(2),
+    total: +activeGloam.total.toFixed(2), knightReady } : { none: true, knightReady };
+}
 
 export function updateRemembering(dt, night) {
   updateLetters(dt);

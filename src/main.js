@@ -35,6 +35,7 @@ import { updateScarf } from './scarf.js';
 import { updateSimmerpot } from './simmerpot.js';
 import { updateJournal } from './journal.js';
 import { updateGubbin } from './gubbin.js';
+import { buildTumbledVale } from './tumbledvale.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
 import { AudioSys } from './audio.js';
@@ -113,6 +114,7 @@ buildRemembering();
 buildEnemies();
 buildAdventure();
 buildCoil();
+buildTumbledVale();
 
 G.player = new Player();
 G.ui = new UI();
