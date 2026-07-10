@@ -1180,6 +1180,16 @@ class Boglin {
       ch.add(club);
       armR.add(ch);
     }
+    // per-variant gear: the common moss-kin wear the stitched hood, bruisers
+    // go bare with a bone crest, lobbers drape the moss cloak
+    const gearPick = this.tough ? 'skullcap' : this.moss ? 'mosscloak' : 'hood';
+    for (const gearName of ['hood', 'skullcap', 'mosscloak']) {
+      const gearNode = inner.getObjectByName(gearName);
+      if (gearNode && gearName !== gearPick) gearNode.parent.remove(gearNode);
+    }
+    this.warpaint = inner.getObjectByName('warpaint');
+    if (this.warpaint) this.warpaint.visible = false; // blood nights only
+
     // strip the procedural body; the markers and health bar stay
     const keep = new Set([this.alertMark, this.qMark, this.bar]);
     for (const c of [...this.group.children]) if (!keep.has(c)) this.group.remove(c);
@@ -1414,6 +1424,20 @@ class Boglin {
     this.stateT += dt;
 
     this.campDoused = !!(this.campFire && this.campFire.doused);
+    // blood nights mark every face in the camp
+    if (this.warpaint) this.warpaint.visible = !!G.bloodNight;
+    // a lit fire on a cold night (or through long rain) draws idle hands
+    this.warming = (this.state === 'idle' || this.state === 'wander') &&
+      this.campFire && !this.campFire.doused &&
+      (nightNow || (G.weather && G.weather.campQuiet > 0.3)) &&
+      Math.hypot(this.pos.x - this.campFire.x, this.pos.z - this.campFire.z) < 4.5;
+    if (this.warming) {
+      const want = Math.atan2(this.campFire.x - this.pos.x, this.campFire.z - this.pos.z);
+      let dyaw = want - this.yaw;
+      while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+      while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+      this.yaw += dyaw * Math.min(1, dt * 3);
+    }
     // Without firelight and drums, hard rain masks the camp's senses. Existing
     // fights continue; only acquisition range shrinks, so weather never erases
     // an enemy that already committed to the player.
@@ -1761,6 +1785,9 @@ class Boglin {
       armRSpeed = dt * 34;
     } else if (s === 'leap') {
       armRTarget = -2.2; armRSpeed = dt * 10;
+    } else if (this.warming && moveSpeed === 0) {
+      // hands held out to the flame, swaying with the heat
+      armRTarget = -1.28 + Math.sin(t * 3) * 0.06; armRSpeed = dt * 6;
     } else {
       armRTarget = Math.sin(t * 2.5) * 0.1 - 0.2; armRSpeed = dt * 6;
     }
@@ -1770,7 +1797,9 @@ class Boglin {
     // off-hand: swings with the gait, flails up during a leap, braces on strike
     const armLTarget = s === 'leap' ? -2.2
       : s === 'strike' ? 0.6
-      : moveSpeed > 0 ? Math.sin(t * 6) * 0.4 : Math.sin(t * 2.4) * 0.06;
+      : moveSpeed > 0 ? Math.sin(t * 6) * 0.4
+      : this.warming ? -1.28 + Math.sin(t * 3.2) * 0.06
+      : Math.sin(t * 2.4) * 0.06;
     this.armL.rotation.x = lerp(this.armL.rotation.x, armLTarget, Math.min(1, dt * 12));
 
     this.alertMark.rotation.y = t * 3;
