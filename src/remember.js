@@ -64,6 +64,35 @@ const LETTERS = [
     text: '"Friend — you caught these, so the wind kept my route. One kindness: there is a cairn beneath the gold trees where the wind turns. Tell it the letters arrived. A courier likes to know."' },
 ];
 
+// Letters Home — the valley writes back. Each reply appears on the wind near
+// its writer's home once you have earned it, and is caught like Piet's.
+const REPLIES = [
+  {
+    id: 'reply_tilla', x: 26, z: -98, title: 'A Reply — from Tilla',
+    ready: () => !!(G.tut.quests && G.tut.quests.tilla >= 3),
+    text: '"Wanderer — I watched you go up the plateau like the hill owed you money. The stores are full again and I sleep with the window open now. If the sky-works wake, tell them the Gleaner kept faith. — T."',
+  },
+  {
+    id: 'reply_ilyra', x: -146, z: 114, title: 'A Reply — from Ilyra',
+    ready: () => !!(G.story && G.story.flags && G.story.flags.lanternsReported),
+    text: '"The moon-road holds. Some nights I walk the shore and the five flames lean toward me like old friends leaning over a fence. You gave the lake back its memory. It has not forgotten who. — Ilyra Fen."',
+  },
+  {
+    id: 'reply_sella', x: 46, z: -72, title: 'A Bill of Sale — from Sella',
+    ready: () => {
+      const t = G.story && G.story.adventure && G.story.adventure.trader;
+      if (!t || !t.purchaseCounts) return false;
+      return Object.values(t.purchaseCounts).reduce((n, c) => n + (Number(c) || 0), 0) >= 3;
+    },
+    text: '"RECEIVED: assorted gems, good conversation, proof the roads are worth walking. OWED: one favor, redeemable wherever my pack and I happen to be. The roads say hello. They talk about you, you know. — S. Vane, Road-Tinker."',
+  },
+  {
+    id: 'reply_maren', x: 40, z: -86, title: 'A Reply — from Maren',
+    ready: () => !!(G.story && G.story.flags && G.story.flags.coilCompleted),
+    text: '"I taught you to walk and the wind taught you the rest — that is how I will tell it, anyway. Eight kept the valley, and I greeted the ninth by the fallen stone and did not know it. An old man can still be surprised. Good. — M."',
+  },
+];
+
 const GLOAMS = [
   { id: 'gloam1', x: 97, z: 7, r: 36, title: 'The Parting',
     entry: 'Two amber figures at the serpent-gate: one crossed, one knelt and stayed. The ring held their shapes a hundred years, like a held breath.' },
@@ -99,6 +128,7 @@ export const CHRONICLE = [
   ...STONES.map(s => ({ id: s.id, title: 'The Hollow Stones · ' + s.title, text: s.text })),
   ...GLOAMS.map(g => ({ id: g.id, title: 'Gloaming · ' + g.title, text: g.entry })),
   ...LETTERS.map(l => ({ id: l.id, title: 'On the Wind · ' + l.title, text: l.text })),
+  ...REPLIES.map(l => ({ id: l.id, title: 'Letters Home · ' + l.title, text: l.text })),
   { id: 'lettersLaid', title: "On the Wind · Piet's Cairn",
     text: 'The letters lie under the stones beneath the gold trees now. The feather charm turned all the while, like a route being planned. Delivered.' },
   { id: 'hartDone', title: 'The Pale Hart',
@@ -301,8 +331,76 @@ function catchLetter(rec) {
   save();
 }
 
+// Letters Home: spawn a reply the moment it is earned, in a low flutter
+// pocket by its writer's home; caught with the same snatch-or-interact verbs.
+const replies = []; // {def, mesh, zone, ph, gone, it}
+let replyCheckT = 0;
+
+function spawnReply(def) {
+  const h = heightAt(def.x, def.z);
+  const zone = { x: def.x, z: def.z, r: 3, bottomY: h + 1.5, topY: h + 8 };
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.36, 0.27),
+    new THREE.MeshBasicMaterial({ color: 0xf7edd4, side: THREE.DoubleSide }));
+  mesh.position.set(zone.x, h + 4, zone.z);
+  G.scene.add(mesh);
+  const rec = { def, mesh, zone, ph: Math.random() * 9, gone: false, it: null };
+  rec.it = {
+    pos: mesh.position, r: 3.2, label: 'Catch the letter',
+    onUse() { catchReply(rec); },
+  };
+  G.interactables.push(rec.it);
+  replies.push(rec);
+}
+
+function catchReply(rec) {
+  if (rec.gone) return;
+  rec.gone = true;
+  rec.it.gone = true;
+  rec.mesh.visible = false;
+  spawnSparkle(rec.mesh.position.x, rec.mesh.position.y, rec.mesh.position.z, 0xf7edd4, 14, 2.5);
+  G.lore[rec.def.id] = true;
+  G.ui.dialog('A LETTER, ADDRESSED TO YOU', rec.def.text, false);
+  G.ui.toast('✉ Chronicle — ' + rec.def.title, 0xbfe8ff, 4600);
+  G.audio.sfx('glimmer');
+  save();
+}
+
+function updateReplies(dt) {
+  replyCheckT += dt;
+  if (replyCheckT > 3) {
+    replyCheckT = 0;
+    for (const def of REPLIES) {
+      if (G.lore[def.id] || replies.some(r => r.def === def)) continue;
+      if (def.ready()) {
+        spawnReply(def);
+        G.ui.toast('Something pale tumbles on the wind, near ' +
+          (def.id === 'reply_sella' ? 'the old road' : 'a friend\'s home') + '...', 0xf7edd4, 4600);
+      }
+    }
+  }
+  const p = G.player.pos;
+  for (const rec of replies) {
+    if (rec.gone) continue;
+    const z = rec.zone;
+    if ((p.x - z.x) ** 2 + (p.z - z.z) ** 2 > 140 * 140) continue;
+    const t = G.time * 0.55 + rec.ph;
+    const span = Math.max(3, z.topY - z.bottomY - 3);
+    rec.mesh.position.set(
+      z.x + Math.cos(t) * z.r * 0.6,
+      z.bottomY + 1.5 + (Math.sin(t * 0.37 + rec.ph) * 0.5 + 0.5) * span,
+      z.z + Math.sin(t) * z.r * 0.6);
+    rec.mesh.rotation.set(Math.sin(t * 2.1) * 0.9, t * 1.4, Math.sin(t * 1.7) * 0.6);
+    if ((p.x - rec.mesh.position.x) ** 2 + (p.y + 1.2 - rec.mesh.position.y) ** 2 +
+        (p.z - rec.mesh.position.z) ** 2 < 1.9 * 1.9) {
+      catchReply(rec);
+    }
+  }
+}
+
 function updateLetters(dt) {
   if (!lettersInit) { initLetters(); return; }
+  updateReplies(dt);
   const p = G.player.pos;
   for (const rec of letters) {
     if (rec.gone) continue;
